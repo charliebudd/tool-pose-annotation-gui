@@ -15,6 +15,7 @@ from random import random
 from glob import glob
 import json
 import argparse
+import numpy as np
 
 Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 
@@ -35,44 +36,81 @@ TAG_COLOR_VALUE_MAP = {
 
 POINT_RADIUS = 3
 
+def position_on_line(p, a, b):
+    p, a, b = tuple(map(np.array, (p, a, b)))
+    ap = p-a
+    ab = b-a
+    abl = np.linalg.norm(ab)
+    abu = ab / abl
+    return tuple(a + abu * np.clip(np.dot(ap, abu), 0, abl))
+
 class Skeleton(Widget):
 
     def __init__(self, position):
         super().__init__()
         self.point_size = 3
         self.hue = random()
-        self.points = [position, position]
+        self.points = [position]
         self.point_index = 0
-        self.edges = [[0, 1], [1, 2], [1, 3]]
-        self.tags = []
+        # self.edges = [[0, 1], [1, 2], [1, 3]]
+        self.edges = [[0, 1], [1, 2], [2, 3], [1, 4], [4, 5]]
+        self.interpolating = False
 
-    def add_point(self, tag):
-        self.tags.append(tag)
-        self.points.append(self.points[-1])
-        self.point_index += 1
-
-    def is_done(self):
-        return self.point_index > 3
+    def add_point(self, occluded=False):
+        if self.interpolating:
+            self.interpolating = False
+        else:
+            self.points.append(self.points[-1])
+            self.point_index += 1
+            if self.point_index == 3 or self.point_index == 5:
+                self.points.append(self.points[-1])
+                self.point_index += 1
+                self.interpolating = occluded
+            
+    def must_stop(self):
+        return self.point_index > 4 and not self.interpolating
+    
+    def can_stop(self):
+        return self.point_index > 1 and not self.interpolating
+    
+    def finish(self):
+        self.points = self.points[:-1]
+        self.edges = [e for e in self.edges if e[1] < len(self.points)]
+        self.draw()
 
     def set_position(self, position):
+        if self.interpolating:
+            a = self.points[1]
+            b = self.points[self.point_index-1]
+            position = position_on_line(position, a, b)
+            self.points[self.point_index-2] = position
         self.points[self.point_index] = position
         self.draw()
 
     def draw(self):
         self.canvas.clear()
         with self.canvas:
-            Color(self.hue, 0.2, 1.0, mode='hsv')
+            
             for edge in self.edges:
+                if edge[1] == 3 or edge[1] == 5:
+                    Color(self.hue, 0.2, 0.5, mode='hsv')
+                else:
+                    Color(self.hue, 0.2, 1.0, mode='hsv')
                 if edge[0] < len(self.points) and edge[1] < len(self.points):
                     start, end = self.points[edge[0]], self.points[edge[1]]
                     Line(points=[start, end])
-            for tag, point in zip(self.tags, self.points):
-                value = TAG_COLOR_VALUE_MAP[tag]
-                Color(self.hue, 1.0, value, mode='hsv')
-                Ellipse(pos=(point[0] - POINT_RADIUS, point[1] - POINT_RADIUS), size=(2 * POINT_RADIUS, 2 * POINT_RADIUS))
+                    
+            for i in [0, 1, 3, 2, 5, 4, 6]:
+                if i < len(self.points):
+                    point = self.points[i]
+                    if i == 3 or i == 5:
+                        Color(self.hue, 0.2, 0.5, mode='hsv')
+                    else:
+                        Color(self.hue, 0.2, 1.0, mode='hsv')
+                    Ellipse(pos=(point[0] - POINT_RADIUS, point[1] - POINT_RADIUS), size=(2 * POINT_RADIUS, 2 * POINT_RADIUS))
 
     def get_data(self):
-        return {'nodes': self.points, 'edges': self.edges, 'tags': self.tags}
+        return {'nodes': self.points, 'edges': self.edges}
 
 class SkeletonAnnotator(Widget):
 
@@ -86,16 +124,24 @@ class SkeletonAnnotator(Widget):
         position = (touch.x, touch.y)
 
         if touch.button in MOUSE_BUTTON_MAP:
-            tag = MOUSE_BUTTON_MAP[touch.button]
 
-            if self.can_stop():
+            if len(self.skeletons) == 0:
                 self.skeletons.append(Skeleton(position))
                 self.add_widget(self.skeletons[-1])
-
-            self.skeletons[-1].add_point(tag)
-
-    def can_stop(self):
-        return len(self.skeletons) == 0 or self.skeletons[-1].is_done()
+            
+            if touch.button == "left":
+                self.skeletons[-1].add_point()
+            elif touch.button == "right":
+                self.skeletons[-1].add_point(occluded=True)
+            elif touch.button == "middle" and self.skeletons[-1].can_stop():
+                self.skeletons[-1].finish()
+                self.skeletons.append(Skeleton(position))
+                self.add_widget(self.skeletons[-1])
+                
+            if self.skeletons[-1].must_stop():
+                self.skeletons[-1].finish()
+                self.skeletons.append(Skeleton(position))
+                self.add_widget(self.skeletons[-1])
 
     def mouse_pos(self, window, pos):
         position = (pos[0], pos[1])
@@ -103,7 +149,7 @@ class SkeletonAnnotator(Widget):
             self.skeletons[-1].set_position(position)
 
     def get_data(self):
-        return [skel.get_data() for skel in self.skeletons]
+        return [skel.get_data() for skel in self.skeletons if len(skel.points) > 1]
 
     def reset(self):
         for skeleton in self.skeletons:
@@ -204,9 +250,9 @@ if __name__ == '__main__':
         with open(json_file, 'w') as file:
             json.dump(data, file)
 
-
     images = sorted(glob(f'{args.folder}/*{args.image_suffix}.png'))
     start_index = len(glob(f'{args.folder}/*{args.skeleton_suffix}.json'))
+    start_index = 0
 
     AnnotationApp(images, start_index, save_function).run()
     
