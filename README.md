@@ -1,2 +1,2 @@
-# tool-pose-annotation-gui
+# Tool Pose Annotation GUI
 Pose annotation GUI for laparoscopic surgical tools.
