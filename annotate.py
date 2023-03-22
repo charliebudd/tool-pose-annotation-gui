@@ -18,6 +18,7 @@ import json
 import argparse
 import numpy as np
 
+Window.maximize()
 Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 
 ESCAPE_KEYCODE = 41
@@ -268,10 +269,14 @@ if __name__ == '__main__':
     )
     args = parser.parse_args()
 
-    images = sorted(glob(args.image_glob))
+    images = sorted(glob(args.image_glob, recursive=True))
+    
     if args.skip_annotated:
         images = [i for i in images if not os.path.exists(i.split("."[0] + ".json"))]
-    annotations = [i.split(".")[0] + ".json" for i in sorted(glob(args.image_glob))]
-    
+        
+    assert len(images) > 0, 'No images found!'
+
+    annotations = [i.split(".")[0] + ".json" for i in images]
+
     AnnotationApp(images, annotations).run()
     
