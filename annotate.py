@@ -17,6 +17,7 @@ import json
 import argparse
 import numpy as np
 
+
 Window.maximize()
 Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 
