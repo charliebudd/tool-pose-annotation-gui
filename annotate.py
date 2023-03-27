@@ -17,6 +17,9 @@ from glob import glob
 import json
 import argparse
 import numpy as np
+from collections import namedtuple
+
+from src import Graph
 
 Window.maximize()
 Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
@@ -29,13 +32,11 @@ LEFT_KEYCODE = 80
 MOUSE_BUTTON_MAP = {
     "left": "visible",
     "right": "occluded",
-    "middle": "missing"
 }
 
 TAG_COLOR_VALUE_MAP = {
     "visible": 1.0,
     "occluded": 0.6,
-    "missing": 0.2
 }
 
 POINT_RADIUS = 3
@@ -50,114 +51,122 @@ def position_on_line(p, a, b):
 
 class Skeleton(Widget):
 
-    def __init__(self, position):
+    def __init__(self, position, tag):
         super().__init__()
-        self.point_size = 3
-        self.hue = random()
-        self.points = [position]
-        self.point_index = 0
-        self.edges = [[0, 1], [1, 2], [2, 3], [1, 4], [4, 5]]
-        self.interpolating = False
-
-    def add_point(self, occluded=False):
-        if self.interpolating:
-            self.interpolating = False
-        else:
-            self.points.append(self.points[-1])
-            self.point_index += 1
-            if self.point_index == 3 or self.point_index == 5:
-                self.points.append(self.points[-1])
-                self.point_index += 1
-                self.interpolating = occluded
-            
-    def must_stop(self):
-        return self.point_index > 4 and not self.interpolating
+        self.node_radius = 3
+        self.color_map = {k: (random(), 0.3, TAG_COLOR_VALUE_MAP[k]) for k in TAG_COLOR_VALUE_MAP}
+        self.nodes = [position, position]
+        self.tags = [tag, tag]
+        self.edges = [(0, 1), (1, 2), (1, 3)]
+        self.transitions = [None, None, None]
+        
+    @property
+    def current_node(self):
+        return len(self.nodes)-1
     
+    @property
+    def base_node(self):
+        index = [e[1] for e in self.edges].index(self.current_node)
+        return self.edges[index][0]
+    
+    @property
+    def is_interpolating(self):
+        return self.tags[self.base_node] != self.tags[self.current_node]
+        
+    @property
+    def must_stop(self):
+        return len(self.nodes) == 5
+    
+    @property
     def can_stop(self):
-        return self.point_index > 1 and not self.interpolating
+        return self.current_node > 1 and not self.is_interpolating
+    
+    def set_point(self, tag):
+        if not self.is_interpolating:
+            self.tags[self.current_node] = tag
+            if not self.is_interpolating:
+                self.nodes.append(self.nodes[self.current_node])
+                if len(self.nodes) < 5:
+                    self.tags.append(self.tags[self.base_node])
+        else:
+            self.nodes.append(self.nodes[self.current_node])
+            if len(self.nodes) < 5:
+                self.tags.append(self.tags[self.base_node])
+        self.draw()
     
     def finish(self):
-        self.points = self.points[:-1]
-        self.edges = [e for e in self.edges if e[1] < len(self.points)]
+        self.nodes = self.nodes[:-1]
+        self.edges = [e for e in self.edges if e[1] < len(self.nodes)]
         self.draw()
 
     def set_position(self, position):
-        if self.interpolating:
-            a = self.points[1]
-            b = self.points[self.point_index-1]
-            position = position_on_line(position, a, b)
-            self.points[self.point_index-2] = position
-        self.points[self.point_index] = position
+        if self.is_interpolating:
+            a = self.nodes[self.base_node]
+            b = self.nodes[self.current_node]
+            edge_index = self.edges.index((self.base_node, self.current_node))
+            self.transitions[edge_index] = position_on_line(position, a, b)
+        else:
+            self.nodes[self.current_node] = position
         self.draw()
 
     def draw(self):
         self.canvas.clear()
         with self.canvas:
-            
-            for edge in self.edges:
-                if edge[1] == 3 or edge[1] == 5:
-                    Color(self.hue, 0.2, 0.5, mode='hsv')
-                else:
-                    Color(self.hue, 0.2, 1.0, mode='hsv')
-                if edge[0] < len(self.points) and edge[1] < len(self.points):
-                    start, end = self.points[edge[0]], self.points[edge[1]]
-                    Line(points=[start, end])
-                    
-            for i in [0, 1, 3, 2, 5, 4, 6]:
-                if i < len(self.points):
-                    point = self.points[i]
-                    if i == 3 or i == 5:
-                        Color(self.hue, 0.2, 0.5, mode='hsv')
+            for (start, end), transition in zip(self.edges, self.transitions):
+                if start < len(self.nodes) and end < len(self.nodes):
+                    start_node, end_node = self.nodes[start], self.nodes[end]
+                    start_tag, end_tag = self.tags[start], self.tags[end]
+                    if transition != None:
+                        Color(*self.color_map[start_tag], mode='hsv')
+                        Line(points=[start_node, transition])
+                        Color(*self.color_map[end_tag], mode='hsv')
+                        Line(points=[transition, end_node])
                     else:
-                        Color(self.hue, 0.2, 1.0, mode='hsv')
-                    Ellipse(pos=(point[0] - POINT_RADIUS, point[1] - POINT_RADIUS), size=(2 * POINT_RADIUS, 2 * POINT_RADIUS))
+                        Color(*self.color_map[start_tag], mode='hsv')
+                        Line(points=[start_node, end_node])
+            for node, tag in zip(self.nodes, self.tags):
+                Color(*self.color_map[tag], mode='hsv')
+                Ellipse(pos=(node[0] - self.node_radius, node[1] - self.node_radius), size=(2 * self.node_radius, 2 * self.node_radius))
 
     def get_data(self):
-        return {'nodes': self.points, 'edges': self.edges}
+        edges = [(s, e) for s, e in self.edges if s < len(self.nodes) and e < len(self.nodes)]
+        transitions = transitions[:len(edges)]
+        return {'nodes': self.nodes, 'tags': self.tags, 'edges': edges, 'transitions': transitions}
 
 class SkeletonAnnotator(Widget):
 
     def __init__(self):
         super().__init__()
-        self.skeletons = []
         Window.bind(mouse_pos=self.mouse_pos)
+        self.skeletons = []
+        self.current_skeleton = None
         self.waiting = False
 
     def on_touch_down(self, touch):
         
         if self.waiting:
             return
-
+        
         position = (touch.x, touch.y)
-
+        
         if touch.button in MOUSE_BUTTON_MAP:
-
-            if len(self.skeletons) == 0:
-                self.skeletons.append(Skeleton(position))
-                self.add_widget(self.skeletons[-1])
+            tag = MOUSE_BUTTON_MAP[touch.button]
+            if self.current_skeleton == None:
+                self.current_skeleton = Skeleton(position, tag)
+                self.add_widget(self.current_skeleton)
+            else:
+                self.current_skeleton.set_point(tag)
             
-            if touch.button == "left":
-                self.skeletons[-1].add_point()
-            elif touch.button == "right":
-                self.skeletons[-1].add_point(occluded=True)
-            elif touch.button == "middle" and self.skeletons[-1].can_stop():
-                self.skeletons[-1].finish()
-                self.skeletons.append(Skeleton(position))
-                self.add_widget(self.skeletons[-1])
-                
-            if self.skeletons[-1].must_stop():
-                self.skeletons[-1].finish()
-                self.skeletons.append(Skeleton(position))
-                self.add_widget(self.skeletons[-1])
+        if self.current_skeleton.must_stop or touch.button == "middle" and self.current_skeleton.can_stop:
+            print("finish")
+            self.current_skeleton.finish()
+            self.skeletons.append(self.current_skeleton)
+            self.current_skeleton = None
 
     def mouse_pos(self, window, pos):
-        if self.waiting:
-            return
-        position = (pos[0], pos[1])
-        if len(self.skeletons) > 0:
-            self.skeletons[-1].set_position(position)
+        if self.current_skeleton != None:
+            self.current_skeleton.set_position((pos[0], pos[1]))
 
-    
     def set_data(self, data):
         
         for skel in data:
