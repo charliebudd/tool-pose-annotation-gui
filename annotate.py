@@ -296,19 +296,12 @@ if __name__ == '__main__':
         help='glob pattern for finding images'
     )
     parser.add_argument(
-        '--skip-annotated', action="store_true",
-        help='filters out images that have already been annotated'
-    )
-    parser.add_argument(
         '--visualise-only', action="store_true",
         help='blocks annotation editing'
     )
     args = parser.parse_args()
 
     images = sorted(glob(args.image_glob, recursive=True))
-    
-    if args.skip_annotated:
-        images = [i for i in images if not os.path.exists(i.split("."[0] + ".json"))]
         
     assert len(images) > 0, 'No images found!'
 
