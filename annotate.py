@@ -93,7 +93,9 @@ class Skeleton(Widget):
     
     def finish(self):
         self.nodes = self.nodes[:-1]
-        self.edges = [e for e in self.edges if e[1] < len(self.nodes)]
+        while len(self.nodes) < 4:
+            self.nodes.append((0.0, 0.0))
+            self.tags.append("missing")
         self.draw()
 
     def set_position(self, position):
@@ -105,7 +107,17 @@ class Skeleton(Widget):
         else:
             self.nodes[self.current_node] = position
         self.draw()
-
+        
+    def get_data(self):
+        return {'nodes': self.nodes, 'tags': self.tags, 'edges': self.edges, 'transitions': self.transitions}
+    
+    def set_data(self, data):
+        self.nodes = data['nodes']
+        self.tags = data['tags']
+        self.edges = data['edges']
+        self.transitions = data['transitions']
+        self.draw()
+        
     def draw(self):
         self.canvas.clear()
         with self.canvas:
@@ -113,22 +125,21 @@ class Skeleton(Widget):
                 if start < len(self.nodes) and end < len(self.nodes):
                     start_node, end_node = self.nodes[start], self.nodes[end]
                     start_tag, end_tag = self.tags[start], self.tags[end]
-                    if transition != None:
-                        Color(*self.color_map[start_tag], mode='hsv')
-                        Line(points=[start_node, transition])
-                        Color(*self.color_map[end_tag], mode='hsv')
-                        Line(points=[transition, end_node])
-                    else:
-                        Color(*self.color_map[start_tag], mode='hsv')
-                        Line(points=[start_node, end_node])
+                    if start_tag != "missing" and end_tag != "missing":
+                        if transition != None:
+                            Color(*self.color_map[start_tag], mode='hsv')
+                            Line(points=[start_node, transition])
+                            Color(*self.color_map[end_tag], mode='hsv')
+                            Line(points=[transition, end_node])
+                        else:
+                            Color(*self.color_map[start_tag], mode='hsv')
+                            Line(points=[start_node, end_node])
             for node, tag in zip(self.nodes, self.tags):
-                Color(*self.color_map[tag], mode='hsv')
-                Ellipse(pos=(node[0] - self.node_radius, node[1] - self.node_radius), size=(2 * self.node_radius, 2 * self.node_radius))
+                if tag != "missing":
+                    Color(*self.color_map[tag], mode='hsv')
+                    Ellipse(pos=(node[0] - self.node_radius, node[1] - self.node_radius), size=(2 * self.node_radius, 2 * self.node_radius))
 
-    def get_data(self):
-        edges = [(s, e) for s, e in self.edges if s < len(self.nodes) and e < len(self.nodes)]
-        transitions = transitions[:len(edges)]
-        return {'nodes': self.nodes, 'tags': self.tags, 'edges': edges, 'transitions': transitions}
+   
 
 class SkeletonAnnotator(Widget):
 
@@ -155,7 +166,6 @@ class SkeletonAnnotator(Widget):
                 self.current_skeleton.set_point(tag)
             
         if self.current_skeleton.must_stop or touch.button == "middle" and self.current_skeleton.can_stop:
-            print("finish")
             self.current_skeleton.finish()
             self.skeletons.append(self.current_skeleton)
             self.current_skeleton = None
@@ -165,20 +175,14 @@ class SkeletonAnnotator(Widget):
             self.current_skeleton.set_position((pos[0], pos[1]))
 
     def set_data(self, data):
-        
         for skel in data:
-            self.skeletons.append(Skeleton((0, 0)))
-            self.add_widget(self.skeletons[-1])
-            self.skeletons[-1].points = skel["nodes"]
-            self.skeletons[-1].draw()
-        
-        self.skeletons.append(Skeleton((0, 0)))
-        self.add_widget(self.skeletons[-1])
-        
-        return [skel.get_data() for skel in self.skeletons if len(skel.points) > 1]
+            skeleton = Skeleton((0, 0), "missing")
+            skeleton.set_data(skel)
+            self.add_widget(skeleton)
+            self.skeletons.append(skeleton)
 
     def get_data(self):
-        return [skel.get_data() for skel in self.skeletons if len(skel.points) > 1]
+        return [skel.get_data() for skel in self.skeletons]
 
     def reset(self):
         for skeleton in self.skeletons:
@@ -234,7 +238,7 @@ class AnnotationApp(App):
         with open(self.annotation_files[self.index], 'r') as file:
             data = json.load(file)
         for skel in data:
-            skel['nodes'] = [self.image_to_gui(pos) for pos in skel['nodes']]
+            skel['nodes'] = [pos if pos == None else self.image_to_gui(pos) for pos in skel['nodes']]
         self.annotator.set_data(data)
         self.annotator.waiting = False
         
