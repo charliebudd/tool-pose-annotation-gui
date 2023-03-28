@@ -265,7 +265,7 @@ class AnnotationApp(App):
         
         for skel in data:
             if not "transitions" in skel:
-                nodes = skel["nodes"]
+                nodes = [None if node == None else (node[0], -node[1]) for node in skel["nodes"]]
                 skel["transitions"] = [None, None if len(nodes) < 4 or nodes[2] == nodes[3] else nodes[2], None if len(nodes) < 6 or nodes[4] == nodes[5] else nodes[4]]
                 skel["edges"] = [(0, 1), (1, 2), (1, 3)]
                 skel["tags"] = [
