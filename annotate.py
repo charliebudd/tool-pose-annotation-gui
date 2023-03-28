@@ -94,8 +94,9 @@ class Skeleton(Widget):
     
     def finish(self):
         self.nodes = self.nodes[:-1]
+        self.tags = self.tags[:len(self.nodes)]
         while len(self.nodes) < 4:
-            self.nodes.append((0.0, 0.0))
+            self.nodes.append(None)
             self.tags.append("missing")
         self.draw()
 
@@ -259,7 +260,8 @@ class AnnotationApp(App):
         with open(self.annotation_files[self.index], 'r') as file:
             data = json.load(file)
         for skel in data:
-            skel['nodes'] = [pos if pos == None else self.image_to_gui(pos) for pos in skel['nodes']]
+            skel['nodes'] = [self.image_to_gui(pos) for pos in skel['nodes']]
+            skel['transitions'] = [self.image_to_gui(pos) for pos in skel['transitions']]
         self.annotator.set_data(data)
         self.annotator.waiting = False
         
@@ -268,10 +270,13 @@ class AnnotationApp(App):
             data = self.annotator.get_data()
             for skel in data:
                 skel['nodes'] = [self.gui_to_image(pos) for pos in skel['nodes']]
+                skel['transitions'] = [self.gui_to_image(pos) for pos in skel['transitions']]
             with open(self.annotation_files[self.index], 'w') as file:
                 json.dump(data, file)
             
     def gui_to_image(self, point):
+        if point == None:
+            return None
         x_shift = self.image_display.pos[0] + int((self.image_display.size[0] - self.image_display.norm_image_size[0]) / 2)
         y_shift = self.image_display.pos[1] + int((self.image_display.size[1] - self.image_display.norm_image_size[1]) / 2)
         x_scale = self.image_display.texture.size[0] / self.image_display.norm_image_size[0]
@@ -281,6 +286,8 @@ class AnnotationApp(App):
         return [x, y]
         
     def image_to_gui(self, point):
+        if point == None:
+            return None
         x_shift = self.image_display.pos[0] + int((self.image_display.size[0] - self.image_display.norm_image_size[0]) / 2)
         y_shift = self.image_display.pos[1] + int((self.image_display.size[1] - self.image_display.norm_image_size[1]) / 2)
         x_scale = self.image_display.texture.size[0] / self.image_display.norm_image_size[0]
