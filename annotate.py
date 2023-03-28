@@ -10,6 +10,7 @@ from kivy.app import App
 from kivy.uix.widget import Widget
 from kivy.uix.image import AsyncImage
 from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.boxlayout import BoxLayout
 from kivy.graphics import Color, Ellipse, Line
 from kivy.core.window import Window
 from kivy import clock
@@ -194,8 +195,9 @@ class SkeletonAnnotator(Widget):
         return [skel.get_data() for skel in self.skeletons]
 
     def delete_last(self):
-        self.remove_widget(self.skeletons[-1])
-        self.skeletons = self.skeletons[:-1]
+        if len(self.skeletons) > 0:
+            self.remove_widget(self.skeletons[-1])
+            self.skeletons = self.skeletons[:-1]
         
     def reset(self):
         for skeleton in self.skeletons:
@@ -213,7 +215,7 @@ class AnnotationApp(App):
         self.key_held = False
     
     def build(self):
-        root = FloatLayout()
+        root = BoxLayout(padding=4*[100,])
         self.image_display = AsyncImage(allow_stretch=True)
         root.add_widget(self.image_display)
         self.annotator = SkeletonAnnotator(3.0)
@@ -268,7 +270,7 @@ class AnnotationApp(App):
         x_scale = self.image_display.texture.size[0] / self.image_display.norm_image_size[0]
         y_scale = self.image_display.texture.size[1] / self.image_display.norm_image_size[1]
         x = (point[0] - x_shift) * x_scale
-        y = (point[1] - y_shift) * y_scale
+        y = self.image_display.texture.size[1] - (point[1] - y_shift) * y_scale
         return [x, y]
         
     def image_to_gui(self, point):
@@ -277,7 +279,7 @@ class AnnotationApp(App):
         x_scale = self.image_display.texture.size[0] / self.image_display.norm_image_size[0]
         y_scale = self.image_display.texture.size[1] / self.image_display.norm_image_size[1]
         x = (point[0] / x_scale) + x_shift
-        y = (point[1] / y_scale) + y_shift
+        y = ((self.image_display.texture.size[1] - point[1]) / y_scale) + y_shift
         return [x, y]
 
 if __name__ == '__main__':
