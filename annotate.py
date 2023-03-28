@@ -144,9 +144,10 @@ class Skeleton(Widget):
 
 class SkeletonAnnotator(Widget):
 
-    def __init__(self, node_size):
+    def __init__(self, node_size, allow_editing):
         super().__init__()
         Window.bind(mouse_pos=self.mouse_pos)
+        self.allow_editing = allow_editing
         self.node_size = node_size
         self.skeletons = []
         self.current_skeleton = None
@@ -162,7 +163,7 @@ class SkeletonAnnotator(Widget):
 
     def on_touch_down(self, touch):
         
-        if self.waiting:
+        if not self.allow_editing or self.waiting:
             return
         
         position = (touch.x, touch.y)
@@ -181,6 +182,8 @@ class SkeletonAnnotator(Widget):
             self.current_skeleton = None
 
     def mouse_pos(self, window, pos):
+        if not self.allow_editing:
+            return
         if self.current_skeleton != None:
             self.current_skeleton.set_position((pos[0], pos[1]))
 
@@ -195,6 +198,8 @@ class SkeletonAnnotator(Widget):
         return [skel.get_data() for skel in self.skeletons]
 
     def delete_last(self):
+        if not self.allow_editing:
+            return
         if len(self.skeletons) > 0:
             self.remove_widget(self.skeletons[-1])
             self.skeletons = self.skeletons[:-1]
@@ -206,10 +211,11 @@ class SkeletonAnnotator(Widget):
 
 class AnnotationApp(App):
 
-    def __init__(self, image_files, annotation_files):
+    def __init__(self, image_files, annotation_files, visualise_only):
         super().__init__()
         self.image_files = image_files
         self.annotation_files = annotation_files
+        self.allow_editing = not visualise_only
         self.index = 0
         self.key_code = None
         self.key_held = False
@@ -218,7 +224,7 @@ class AnnotationApp(App):
         root = BoxLayout(padding=4*[100,])
         self.image_display = AsyncImage(allow_stretch=True)
         root.add_widget(self.image_display)
-        self.annotator = SkeletonAnnotator(3.0)
+        self.annotator = SkeletonAnnotator(3.0, self.allow_editing)
         self.image_display.add_widget(self.annotator)
         Window.bind(on_key_down=self.key_down)
         self.image_display.source = self.image_files[self.index]
@@ -228,7 +234,7 @@ class AnnotationApp(App):
         self.load()
 
     def key_down(self, instance, keyboard, keycode, text, modifiers):
-        if keycode == BACKSPACE_KEYCODE:
+        if self.allow_editing and keycode == BACKSPACE_KEYCODE:
             self.annotator.delete_last()
         elif not self.annotator.is_busy and keycode == LEFT_KEYCODE and self.index > 0:
             self.save()
@@ -258,11 +264,12 @@ class AnnotationApp(App):
         self.annotator.waiting = False
         
     def save(self):
-        data = self.annotator.get_data()
-        for skel in data:
-            skel['nodes'] = [self.gui_to_image(pos) for pos in skel['nodes']]
-        with open(self.annotation_files[self.index], 'w') as file:
-            json.dump(data, file)
+        if self.allow_editing:
+            data = self.annotator.get_data()
+            for skel in data:
+                skel['nodes'] = [self.gui_to_image(pos) for pos in skel['nodes']]
+            with open(self.annotation_files[self.index], 'w') as file:
+                json.dump(data, file)
             
     def gui_to_image(self, point):
         x_shift = self.image_display.pos[0] + int((self.image_display.size[0] - self.image_display.norm_image_size[0]) / 2)
@@ -292,6 +299,10 @@ if __name__ == '__main__':
         '--skip-annotated', action="store_true",
         help='filters out images that have already been annotated'
     )
+    parser.add_argument(
+        '--visualise-only', action="store_true",
+        help='blocks annotation editing'
+    )
     args = parser.parse_args()
 
     images = sorted(glob(args.image_glob, recursive=True))
@@ -303,5 +314,5 @@ if __name__ == '__main__':
 
     annotations = [i.split(".")[0] + ".json" for i in images]
 
-    AnnotationApp(images, annotations).run()
+    AnnotationApp(images, annotations, args.visualise_only).run()
     
