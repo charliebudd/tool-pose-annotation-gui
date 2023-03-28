@@ -2,13 +2,16 @@ import os
 os.environ['KIVY_NO_ARGS'] = '1'
 # os.environ['KIVY_NO_CONSOLELOG'] = '1'
 
+from kivy.config import Config
+Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
+Config.set('graphics', 'fullscreen', 'auto')
+
 from kivy.app import App
 from kivy.uix.widget import Widget
 from kivy.uix.image import AsyncImage
 from kivy.uix.floatlayout import FloatLayout
 from kivy.graphics import Color, Ellipse, Line
 from kivy.core.window import Window
-from kivy.config import Config
 from kivy import clock
 
 from random import random
@@ -16,10 +19,7 @@ from glob import glob
 import json
 import argparse
 import numpy as np
-
-
-Window.maximize()
-Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
+import math
 
 ESCAPE_KEYCODE = 41
 BACKSPACE_KEYCODE = 42
@@ -48,10 +48,10 @@ def position_on_line(p, a, b):
 
 class Skeleton(Widget):
 
-    def __init__(self, position, tag):
+    def __init__(self, position, tag, node_radius, hue):
         super().__init__()
-        self.node_radius = 3
-        self.color_map = {k: (random(), 0.3, TAG_COLOR_VALUE_MAP[k]) for k in TAG_COLOR_VALUE_MAP}
+        self.node_radius = node_radius
+        self.color_map = {k: (hue, 0.5, TAG_COLOR_VALUE_MAP[k]) for k in TAG_COLOR_VALUE_MAP}
         self.nodes = [position, position]
         self.tags = [tag, tag]
         self.edges = [(0, 1), (1, 2), (1, 3)]
@@ -128,12 +128,12 @@ class Skeleton(Widget):
                     if start_tag != "missing" and end_tag != "missing":
                         if transition != None:
                             Color(*self.color_map[start_tag], mode='hsv')
-                            Line(points=[start_node, transition])
+                            Line(points=[start_node, transition], width=self.node_radius/2.5)
                             Color(*self.color_map[end_tag], mode='hsv')
-                            Line(points=[transition, end_node])
+                            Line(points=[transition, end_node], width=self.node_radius/2.5)
                         else:
                             Color(*self.color_map[start_tag], mode='hsv')
-                            Line(points=[start_node, end_node])
+                            Line(points=[start_node, end_node], width=self.node_radius/2.5)
             for node, tag in zip(self.nodes, self.tags):
                 if tag != "missing":
                     Color(*self.color_map[tag], mode='hsv')
@@ -143,12 +143,21 @@ class Skeleton(Widget):
 
 class SkeletonAnnotator(Widget):
 
-    def __init__(self):
+    def __init__(self, node_size):
         super().__init__()
         Window.bind(mouse_pos=self.mouse_pos)
+        self.node_size = node_size
         self.skeletons = []
         self.current_skeleton = None
         self.waiting = False
+
+    @property
+    def is_busy(self):
+        return self.current_skeleton != None
+    
+    def get_hue(self):
+        i = len(self.skeletons)
+        return i * 2 / 7.0
 
     def on_touch_down(self, touch):
         
@@ -160,7 +169,7 @@ class SkeletonAnnotator(Widget):
         if touch.button in MOUSE_BUTTON_MAP:
             tag = MOUSE_BUTTON_MAP[touch.button]
             if self.current_skeleton == None:
-                self.current_skeleton = Skeleton(position, tag)
+                self.current_skeleton = Skeleton(position, tag, self.node_size, self.get_hue())
                 self.add_widget(self.current_skeleton)
             else:
                 self.current_skeleton.set_point(tag)
@@ -176,7 +185,7 @@ class SkeletonAnnotator(Widget):
 
     def set_data(self, data):
         for skel in data:
-            skeleton = Skeleton((0, 0), "missing")
+            skeleton = Skeleton((0, 0), "missing", self.node_size, self.get_hue())
             skeleton.set_data(skel)
             self.add_widget(skeleton)
             self.skeletons.append(skeleton)
@@ -184,6 +193,10 @@ class SkeletonAnnotator(Widget):
     def get_data(self):
         return [skel.get_data() for skel in self.skeletons]
 
+    def delete_last(self):
+        self.remove_widget(self.skeletons[-1])
+        self.skeletons = self.skeletons[:-1]
+        
     def reset(self):
         for skeleton in self.skeletons:
             self.remove_widget(skeleton)
@@ -203,8 +216,8 @@ class AnnotationApp(App):
         root = FloatLayout()
         self.image_display = AsyncImage(allow_stretch=True)
         root.add_widget(self.image_display)
-        self.annotator = SkeletonAnnotator()
-        root.add_widget(self.annotator)
+        self.annotator = SkeletonAnnotator(3.0)
+        self.image_display.add_widget(self.annotator)
         Window.bind(on_key_down=self.key_down)
         self.image_display.source = self.image_files[self.index]
         return root
@@ -214,12 +227,12 @@ class AnnotationApp(App):
 
     def key_down(self, instance, keyboard, keycode, text, modifiers):
         if keycode == BACKSPACE_KEYCODE:
-            self.annotator.reset()
-        elif keycode == LEFT_KEYCODE and self.index > 0:
+            self.annotator.delete_last()
+        elif not self.annotator.is_busy and keycode == LEFT_KEYCODE and self.index > 0:
             self.save()
             self.index -= 1
             self.load()
-        elif keycode == RIGHT_KEYCODE and self.index < len(self.image_files) - 1:
+        elif not self.annotator.is_busy and keycode == RIGHT_KEYCODE and self.index < len(self.image_files) - 1:
             self.save()
             self.index += 1
             self.load()
