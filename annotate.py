@@ -201,7 +201,10 @@ class SkeletonAnnotator(Widget):
     def delete_last(self):
         if not self.allow_editing:
             return
-        if len(self.skeletons) > 0:
+        elif self.current_skeleton != None:
+            self.remove_widget(self.current_skeleton)
+            self.current_skeleton = None
+        elif len(self.skeletons) > 0:
             self.remove_widget(self.skeletons[-1])
             self.skeletons = self.skeletons[:-1]
         
