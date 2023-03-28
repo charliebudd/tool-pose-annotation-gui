@@ -262,7 +262,20 @@ class AnnotationApp(App):
             return
         with open(self.annotation_files[self.index], 'r') as file:
             data = json.load(file)
+        
         for skel in data:
+            if not "transitions" in skel:
+                nodes = skel["nodes"]
+                skel["transitions"] = [None, None if len(nodes) < 4 or nodes[2] == nodes[3] else nodes[2], None if len(nodes) < 6 or nodes[4] == nodes[5] else nodes[4]]
+                skel["edges"] = [(0, 1), (1, 2), (1, 3)]
+                skel["tags"] = [
+                    "visible",
+                    "visible",
+                    "missing" if len(nodes) < 3 else ("visible" if skel["transitions"][1] == None else "occluded"),
+                    "missing" if len(nodes) < 6 else ("visible" if skel["transitions"][2] == None else "occluded"),
+                ]
+                skel["nodes"] = [nodes[0], nodes[1], None if len(nodes) < 4 else nodes[3], None if len(nodes) < 6 else nodes[5]]
+                
             skel['nodes'] = [self.image_to_gui(pos) for pos in skel['nodes']]
             skel['transitions'] = [self.image_to_gui(pos) for pos in skel['transitions']]
         self.annotator.set_data(data)
