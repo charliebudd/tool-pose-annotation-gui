@@ -1,31 +1,28 @@
 import os
 os.environ['KIVY_NO_ARGS'] = '1'
-# os.environ['KIVY_NO_CONSOLELOG'] = '1'
 
 from kivy.config import Config
 Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 Config.set('graphics', 'fullscreen', 'auto')
 
+from kivy.core.window import Window
 from kivy.app import App
-from kivy.uix.widget import Widget
-from kivy.uix.image import AsyncImage
-from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.graphics import Color, Ellipse, Line
-from kivy.core.window import Window
-from kivy import clock
 
-from random import random
+from src import ImageAnnotator
+
 from glob import glob
 import json
 import argparse
 import numpy as np
-import math
 
 ESCAPE_KEYCODE = 41
 BACKSPACE_KEYCODE = 42
 RIGHT_KEYCODE = 79
 LEFT_KEYCODE = 80
+UP_KEYCODE = 81
+DOWN_KEYCODE = 82
 
 MOUSE_BUTTON_MAP = {
     "left": "visible",
@@ -34,30 +31,26 @@ MOUSE_BUTTON_MAP = {
 
 TAG_COLOR_VALUE_MAP = {
     "visible": 1.0,
-    "occluded": 0.6,
+    "occluded": 0.3,
 }
-
-POINT_RADIUS = 3
 
 def position_on_line(p, a, b):
     p, a, b = tuple(map(np.array, (p, a, b)))
-    ap = p-a
-    ab = b-a
+    ap, ab = p - a, b - a
     abl = np.linalg.norm(ab)
     abu = ab / abl
     return tuple(a + abu * np.clip(np.dot(ap, abu), 0, abl))
 
-class Skeleton(Widget):
-
-    def __init__(self, position, tag, node_radius, hue):
-        super().__init__()
-        self.node_radius = node_radius
+class Skeleton():
+    def __init__(self, position, tag, hue, node_radius) -> None:
         self.color_map = {k: (hue, 0.5, TAG_COLOR_VALUE_MAP[k]) for k in TAG_COLOR_VALUE_MAP}
+        self.node_radius = 0.5 * node_radius
+        self.node_size = (node_radius,  node_radius)
         self.nodes = [position, position]
         self.tags = [tag, tag]
         self.edges = [(0, 1), (1, 2), (1, 3)]
         self.transitions = [None, None, None]
-        
+            
     @property
     def current_node(self):
         return len(self.nodes)-1
@@ -79,28 +72,27 @@ class Skeleton(Widget):
     def can_stop(self):
         return self.current_node > 1 and not self.is_interpolating
     
-    def set_point(self, tag):
+    def add_point(self, position, tag):
         if not self.is_interpolating:
             self.tags[self.current_node] = tag
             if not self.is_interpolating:
+                self.nodes[self.current_node] = position
                 self.nodes.append(self.nodes[self.current_node])
                 if len(self.nodes) < 5:
                     self.tags.append(self.tags[self.base_node])
         else:
-            self.nodes.append(self.nodes[self.current_node])
+            self.nodes.append(position)
             if len(self.nodes) < 5:
                 self.tags.append(self.tags[self.base_node])
-        self.draw()
-    
+        
     def finish(self):
         self.nodes = self.nodes[:-1]
         self.tags = self.tags[:len(self.nodes)]
         while len(self.nodes) < 4:
             self.nodes.append(None)
             self.tags.append("missing")
-        self.draw()
-
-    def set_position(self, position):
+        
+    def update_cursor_position(self, position):
         if self.is_interpolating:
             a = self.nodes[self.base_node]
             b = self.nodes[self.current_node]
@@ -108,131 +100,115 @@ class Skeleton(Widget):
             self.transitions[edge_index] = position_on_line(position, a, b)
         else:
             self.nodes[self.current_node] = position
-        self.draw()
         
-    def get_data(self):
-        return {'nodes': self.nodes, 'tags': self.tags, 'edges': self.edges, 'transitions': self.transitions}
-    
+    def draw(self):
+        for (start, end), transition in zip(self.edges, self.transitions):
+            if end >= len(self.nodes):
+                break
+            start_tag, end_tag = self.tags[start], self.tags[end]
+            if start_tag != "missing" and end_tag != "missing":
+                start_node, end_node = self.nodes[start], self.nodes[end]
+                if transition != None:
+                    Color(*self.color_map[start_tag], mode='hsv')
+                    Line(points=[start_node, transition], width=0.5 * self.node_radius)
+                    Color(*self.color_map[end_tag], mode='hsv')
+                    Line(points=[transition, end_node], width=0.5 * self.node_radius)
+                else:
+                    Color(*self.color_map[start_tag], mode='hsv')
+                    Line(points=[start_node, end_node], width=0.5 * self.node_radius)
+        for node, tag in zip(self.nodes, self.tags):
+            if tag != "missing":
+                Color(*self.color_map[tag], mode='hsv')
+                Ellipse(pos=(node[0] - self.node_radius, node[1] - self.node_radius), size=self.node_size)
+
     def set_data(self, data):
         self.nodes = data['nodes']
         self.tags = data['tags']
         self.edges = data['edges']
         self.transitions = data['transitions']
-        self.draw()
-        
-    def draw(self):
-        self.canvas.clear()
-        with self.canvas:
-            for (start, end), transition in zip(self.edges, self.transitions):
-                if start < len(self.nodes) and end < len(self.nodes):
-                    start_node, end_node = self.nodes[start], self.nodes[end]
-                    start_tag, end_tag = self.tags[start], self.tags[end]
-                    if start_tag != "missing" and end_tag != "missing":
-                        if transition != None:
-                            Color(*self.color_map[start_tag], mode='hsv')
-                            Line(points=[start_node, transition], width=self.node_radius/2.5)
-                            Color(*self.color_map[end_tag], mode='hsv')
-                            Line(points=[transition, end_node], width=self.node_radius/2.5)
-                        else:
-                            Color(*self.color_map[start_tag], mode='hsv')
-                            Line(points=[start_node, end_node], width=self.node_radius/2.5)
-            for node, tag in zip(self.nodes, self.tags):
-                if tag != "missing":
-                    Color(*self.color_map[tag], mode='hsv')
-                    Ellipse(pos=(node[0] - self.node_radius, node[1] - self.node_radius), size=(2 * self.node_radius, 2 * self.node_radius))
-
-   
-
-class SkeletonAnnotator(Widget):
-
-    def __init__(self, node_size, allow_editing):
+    
+    def get_data(self):
+        return {'nodes': self.nodes, 'tags': self.tags, 'edges': self.edges, 'transitions': self.transitions}
+    
+class SkeletonAnnotator(ImageAnnotator):
+    def __init__(self, allow_editing):
         super().__init__()
-        Window.bind(mouse_pos=self.mouse_pos)
         self.allow_editing = allow_editing
-        self.node_size = node_size
         self.skeletons = []
         self.current_skeleton = None
-        self.waiting = False
-
+    
     @property
     def is_busy(self):
         return self.current_skeleton != None
     
-    def get_hue(self):
-        i = len(self.skeletons)
-        return i * 2 / 7.0
-
-    def on_touch_down(self, touch):
-        
-        if not self.allow_editing or self.waiting:
-            return
-        
-        position = (touch.x, touch.y)
-        
-        if touch.button in MOUSE_BUTTON_MAP:
-            tag = MOUSE_BUTTON_MAP[touch.button]
-            if self.current_skeleton == None:
-                self.current_skeleton = Skeleton(position, tag, self.node_size, self.get_hue())
-                self.add_widget(self.current_skeleton)
-            else:
-                self.current_skeleton.set_point(tag)
-            
-        if self.current_skeleton.must_stop or touch.button == "middle" and self.current_skeleton.can_stop:
-            self.current_skeleton.finish()
-            self.skeletons.append(self.current_skeleton)
-            self.current_skeleton = None
-
-    def mouse_pos(self, window, pos):
+    def on_cursor_moved(self, position):
+        if self.current_skeleton != None:
+            self.current_skeleton.update_cursor_position(position)
+            self.draw()
+    
+    def on_click(self, position, button):
         if not self.allow_editing:
             return
+        if self.current_skeleton == None:
+            if button in MOUSE_BUTTON_MAP:
+                hue = (1 + len(self.skeletons)) * 2 / 7.0
+                self.current_skeleton = Skeleton(position, MOUSE_BUTTON_MAP[button], hue, 4.0)
+        else:
+            if button in MOUSE_BUTTON_MAP:
+                self.current_skeleton.add_point(position, MOUSE_BUTTON_MAP[button])
+            if (button == "middle" and self.current_skeleton.can_stop) or self.current_skeleton.must_stop:
+                self.current_skeleton.finish()
+                self.skeletons.append(self.current_skeleton)
+                self.current_skeleton = None
+        self.draw()
+    
+    def on_draw(self):
+        for skeleton in self.skeletons:
+            skeleton.draw()
         if self.current_skeleton != None:
-            self.current_skeleton.set_position((pos[0], pos[1]))
-
-    def set_data(self, data):
-        for skel in data:
-            skeleton = Skeleton((0, 0), "missing", self.node_size, self.get_hue())
-            skeleton.set_data(skel)
-            self.add_widget(skeleton)
-            self.skeletons.append(skeleton)
-
-    def get_data(self):
-        return [skel.get_data() for skel in self.skeletons]
-
+            self.current_skeleton.draw()
+    
     def delete_last(self):
         if not self.allow_editing:
             return
         elif self.current_skeleton != None:
-            self.remove_widget(self.current_skeleton)
             self.current_skeleton = None
         elif len(self.skeletons) > 0:
-            self.remove_widget(self.skeletons[-1])
             self.skeletons = self.skeletons[:-1]
-        
+        self.draw()
+    
+    def set_data(self, data):
+        for skeleton_data in data:
+            hue = (1 + len(self.skeletons)) * 2 / 7.0
+            skeleton = Skeleton((0, 0), "missing", hue, 4.0)
+            skeleton.set_data(skeleton_data)
+            self.skeletons.append(skeleton)
+        self.draw()
+    
+    def get_data(self):
+        return [skeleton.get_data() for skeleton in self.skeletons]
+    
     def reset(self):
-        for skeleton in self.skeletons:
-            self.remove_widget(skeleton)
         self.skeletons = []
+        self.current_skeleton = None
+
 
 class AnnotationApp(App):
 
-    def __init__(self, image_files, annotation_files, visualise_only):
+    def __init__(self, image_files, annotation_files, allow_editing):
         super().__init__()
         self.image_files = image_files
         self.annotation_files = annotation_files
-        self.allow_editing = not visualise_only
+        self.allow_editing = allow_editing
         self.index = 0
-        self.key_code = None
-        self.key_held = False
-    
+        
     def build(self):
-        root = BoxLayout(padding=4*[100,])
-        self.image_display = AsyncImage(allow_stretch=True)
-        root.add_widget(self.image_display)
-        self.annotator = SkeletonAnnotator(3.0, self.allow_editing)
-        self.image_display.add_widget(self.annotator)
+        self.root = BoxLayout()
+        self.annotator = SkeletonAnnotator(self.allow_editing)
+        self.root.add_widget(self.annotator)
         Window.bind(on_key_down=self.key_down)
-        self.image_display.source = self.image_files[self.index]
-        return root
+        Window.bind(on_request_close=self.on_request_close)
+        return self.root
     
     def on_start(self):
         self.load()
@@ -248,69 +224,27 @@ class AnnotationApp(App):
             self.save()
             self.index += 1
             self.load()
+            
+    def on_request_close(self, *args, **kwargs):
+        if self.annotator.is_busy:
+            return True
+        else:
+            self.save()
+            return False
 
     def load(self):
-        self.image_display.source = self.image_files[self.index]
+        self.annotator.set_image(self.image_files[self.index])
         self.annotator.reset()
         if os.path.exists(self.annotation_files[self.index]):
-            self.annotator.waiting = True
-            self.load_annotations()
-       
-    def load_annotations(self):
-        if self.image_display.texture_size == [32, 32]:
-            clock.Clock.schedule_once(lambda x:AnnotationApp.load_annotations(self), 0.01)
-            return
-        with open(self.annotation_files[self.index], 'r') as file:
-            data = json.load(file)
-        
-        for skel in data:
-            if not "transitions" in skel:
-                nodes = [None if node == None else (node[0], self.image_display.texture.size[1]-node[1]) for node in skel["nodes"]]
-                skel["transitions"] = [None, None if len(nodes) < 4 or nodes[2] == nodes[3] else nodes[2], None if len(nodes) < 6 or nodes[4] == nodes[5] else nodes[4]]
-                skel["edges"] = [(0, 1), (1, 2), (1, 3)]
-                skel["tags"] = [
-                    "visible",
-                    "visible",
-                    "missing" if len(nodes) < 3 else ("visible" if skel["transitions"][1] == None else "occluded"),
-                    "missing" if len(nodes) < 6 else ("visible" if skel["transitions"][2] == None else "occluded"),
-                ]
-                skel["nodes"] = [nodes[0], nodes[1], None if len(nodes) < 4 else nodes[3], None if len(nodes) < 6 else nodes[5]]
-                
-            skel['nodes'] = [self.image_to_gui(pos) for pos in skel['nodes']]
-            skel['transitions'] = [self.image_to_gui(pos) for pos in skel['transitions']]
-        self.annotator.set_data(data)
-        self.annotator.waiting = False
-        
+            with open(self.annotation_files[self.index], 'r') as file:
+                data = json.load(file)
+            self.annotator.set_data(data)
+            
     def save(self):
-        if not self.annotator.waiting and self.allow_editing:
+        if self.allow_editing:
             data = self.annotator.get_data()
-            for skel in data:
-                skel['nodes'] = [self.gui_to_image(pos) for pos in skel['nodes']]
-                skel['transitions'] = [self.gui_to_image(pos) for pos in skel['transitions']]
             with open(self.annotation_files[self.index], 'w') as file:
                 json.dump(data, file)
-            
-    def gui_to_image(self, point):
-        if point == None:
-            return None
-        x_shift = self.image_display.pos[0] + int((self.image_display.size[0] - self.image_display.norm_image_size[0]) / 2)
-        y_shift = self.image_display.pos[1] + int((self.image_display.size[1] - self.image_display.norm_image_size[1]) / 2)
-        x_scale = self.image_display.texture.size[0] / self.image_display.norm_image_size[0]
-        y_scale = self.image_display.texture.size[1] / self.image_display.norm_image_size[1]
-        x = (point[0] - x_shift) * x_scale
-        y = self.image_display.texture.size[1] - (point[1] - y_shift) * y_scale
-        return [x, y]
-        
-    def image_to_gui(self, point):
-        if point == None:
-            return None
-        x_shift = self.image_display.pos[0] + int((self.image_display.size[0] - self.image_display.norm_image_size[0]) / 2)
-        y_shift = self.image_display.pos[1] + int((self.image_display.size[1] - self.image_display.norm_image_size[1]) / 2)
-        x_scale = self.image_display.texture.size[0] / self.image_display.norm_image_size[0]
-        y_scale = self.image_display.texture.size[1] / self.image_display.norm_image_size[1]
-        x = (point[0] / x_scale) + x_shift
-        y = ((self.image_display.texture.size[1] - point[1]) / y_scale) + y_shift
-        return [x, y]
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -330,5 +264,5 @@ if __name__ == '__main__':
 
     annotations = [i.split(".")[0] + ".json" for i in images]
 
-    AnnotationApp(images, annotations, args.visualise_only).run()
+    AnnotationApp(images, annotations, not args.visualise_only).run()
     
