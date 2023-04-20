@@ -29,6 +29,11 @@ MOUSE_BUTTON_MAP = {
     "right": "occluded",
 }
 
+OPPOSITE_TAG = {
+    "visible" : "occluded",
+    "occluded" : "visible",
+}
+
 TAG_COLOR_VALUE_MAP = {
     "visible": 1.0,
     "occluded": 0.3,
@@ -49,7 +54,7 @@ class Skeleton():
         self.nodes = [position, position]
         self.tags = [tag, tag]
         self.edges = [(0, 1), (1, 2), (1, 3)]
-        self.transitions = [None, None, None]
+        self.transitions = [[], [], []]
             
     @property
     def current_node(self):
@@ -80,6 +85,9 @@ class Skeleton():
                 self.nodes.append(self.nodes[self.current_node])
                 if len(self.nodes) < 5:
                     self.tags.append(self.tags[self.base_node])
+            else:
+                edge_index = self.edges.index((self.base_node, self.current_node))
+                self.transitions[edge_index].append(position)
         else:
             self.nodes.append(position)
             if len(self.nodes) < 5:
@@ -97,25 +105,43 @@ class Skeleton():
             a = self.nodes[self.base_node]
             b = self.nodes[self.current_node]
             edge_index = self.edges.index((self.base_node, self.current_node))
-            self.transitions[edge_index] = position_on_line(position, a, b)
+            self.transitions[edge_index][0] = position_on_line(position, a, b)
         else:
             self.nodes[self.current_node] = position
         
-    def draw(self):
-        for (start, end), transition in zip(self.edges, self.transitions):
-            if end >= len(self.nodes):
+    def try_add_transition(self, position):
+        for i, ((start, end), transitions) in enumerate(zip(self.edges, self.transitions)):
+            if end >= len(self.nodes) or self.tags[end] == "missing":
+                return False
+            point = position_on_line(position, self.nodes[start], self.nodes[end])
+            if np.linalg.norm(np.array(position) - np.array(point)) < 2 * self.node_radius:
+                start_pos = np.array(self.nodes[start])
+                for j, t in enumerate(map(np.array, transitions + [self.nodes[end]])):
+                    if np.linalg.norm(t - start_pos) > np.linalg.norm(point - start_pos):
+                        self.transitions[i].insert(j, list(point))
+                        self._clean_tags()
+                        return True
+        return False
+        
+    def _clean_tags(self):
+        for (start, end), transitions in zip(self.edges, self.transitions):
+            if end >= len(self.nodes) or self.tags[end] == "missing":
                 break
-            start_tag, end_tag = self.tags[start], self.tags[end]
-            if start_tag != "missing" and end_tag != "missing":
-                start_node, end_node = self.nodes[start], self.nodes[end]
-                if transition != None:
-                    Color(*self.color_map[start_tag], mode='hsv')
-                    Line(points=[start_node, transition], width=0.5 * self.node_radius)
-                    Color(*self.color_map[end_tag], mode='hsv')
-                    Line(points=[transition, end_node], width=0.5 * self.node_radius)
-                else:
-                    Color(*self.color_map[start_tag], mode='hsv')
-                    Line(points=[start_node, end_node], width=0.5 * self.node_radius)
+            self.tags[end] = OPPOSITE_TAG[self.tags[start]] if len(transitions) % 2 == 1 else self.tags[start]
+                
+    
+    def draw(self):
+        for (start, end), transitions in zip(self.edges, self.transitions):
+            if end >= len(self.nodes) or self.tags[end] == "missing":
+                break
+            curent_tag = self.tags[start]
+            tags = list(self.color_map.keys())
+            start_node, end_node = self.nodes[start], self.nodes[end]
+            nodes = [start_node] + transitions + [end_node]
+            for start, end in zip(nodes[:-1], nodes[1:]):
+                Color(*self.color_map[curent_tag], mode='hsv')
+                Line(points=[start, end], width=0.5 * self.node_radius)
+                curent_tag = tags[(tags.index(curent_tag) + 1)%2]
         for node, tag in zip(self.nodes, self.tags):
             if tag != "missing":
                 Color(*self.color_map[tag], mode='hsv')
@@ -125,7 +151,17 @@ class Skeleton():
         self.nodes = data['nodes']
         self.tags = data['tags']
         self.edges = data['edges']
-        self.transitions = data['transitions']
+        
+        # VERSION UPGRADE HANDLING
+        transition_sets = data['transitions']
+        self.transitions = []
+        for transitions in transition_sets:
+            if transitions == None or len(transitions) == 0:
+                self.transitions.append([])
+            elif type(transitions[0]) is not list:
+                self.transitions.append([transitions])
+            else:
+                self.transitions.append(transitions)
     
     def get_data(self):
         return {'nodes': self.nodes, 'tags': self.tags, 'edges': self.edges, 'transitions': self.transitions}
@@ -149,18 +185,24 @@ class SkeletonAnnotator(ImageAnnotator):
     def on_click(self, position, button):
         if not self.allow_editing:
             return
-        if self.current_skeleton == None:
+        elif self.current_skeleton == None:
+            for skeleton in self.skeletons:
+                if skeleton.try_add_transition(position):
+                    self.draw()
+                    return
             if button in MOUSE_BUTTON_MAP:
                 hue = (1 + len(self.skeletons)) * 2 / 7.0
                 self.current_skeleton = Skeleton(position, MOUSE_BUTTON_MAP[button], hue, 4.0)
+                self.draw()
         else:
             if button in MOUSE_BUTTON_MAP:
                 self.current_skeleton.add_point(position, MOUSE_BUTTON_MAP[button])
+                self.draw()
             if (button == "middle" and self.current_skeleton.can_stop) or self.current_skeleton.must_stop:
                 self.current_skeleton.finish()
                 self.skeletons.append(self.current_skeleton)
                 self.current_skeleton = None
-        self.draw()
+                self.draw()
     
     def on_draw(self):
         for skeleton in self.skeletons:
