@@ -68,6 +68,8 @@ class ImageAnnotator(Widget):
             PushMatrix()
             Translate(x, y, 0.0)
             Scale(w / pw, h / ph, 0.0)
+            Translate(0, ph, 0.0)
+            Scale(1.0, -1.0, 0.0)
             self.on_draw()
             PopMatrix()
             
@@ -105,6 +107,6 @@ class ImageAnnotator(Widget):
         rx, ry, rw, rh = self.rect
         pw, ph = self.texture.size
         x = pw * (x - rx) / rw
-        y = ph * (y - ry) / rh
+        y = ph * (1 - (y - ry) / rh)
         return x, y
     

@@ -1,4 +1,5 @@
 import os
+import json
 os.environ['KIVY_NO_ARGS'] = '1'
 
 from kivy.config import Config
@@ -23,6 +24,7 @@ RIGHT_KEYCODE = 79
 LEFT_KEYCODE = 80
 UP_KEYCODE = 81
 DOWN_KEYCODE = 82
+S_KEYCODE = 22
 
 MOUSE_BUTTON_MAP = {
     "left": "visible",
@@ -172,6 +174,8 @@ class SkeletonAnnotator(ImageAnnotator):
         self.allow_editing = allow_editing
         self.skeletons = []
         self.current_skeleton = None
+        # self.node_radius = 4.0
+        self.node_radius = 6.0
     
     @property
     def is_busy(self):
@@ -192,7 +196,7 @@ class SkeletonAnnotator(ImageAnnotator):
                     return
             if button in MOUSE_BUTTON_MAP:
                 hue = (1 + len(self.skeletons)) * 2 / 7.0
-                self.current_skeleton = Skeleton(position, MOUSE_BUTTON_MAP[button], hue, 4.0)
+                self.current_skeleton = Skeleton(position, MOUSE_BUTTON_MAP[button], hue, self.node_radius)
                 self.draw()
         else:
             if button in MOUSE_BUTTON_MAP:
@@ -222,7 +226,7 @@ class SkeletonAnnotator(ImageAnnotator):
     def set_data(self, data):
         for skeleton_data in data:
             hue = (1 + len(self.skeletons)) * 2 / 7.0
-            skeleton = Skeleton((0, 0), "missing", hue, 4.0)
+            skeleton = Skeleton((0, 0), "missing", hue, self.node_radius)
             skeleton.set_data(skeleton_data)
             self.skeletons.append(skeleton)
         self.draw()
@@ -266,6 +270,8 @@ class AnnotationApp(App):
             self.save()
             self.index += 1
             self.load()
+        elif keycode == S_KEYCODE:
+            self.cache_image()
             
     def on_request_close(self, *args, **kwargs):
         if self.annotator.is_busy:
@@ -273,6 +279,19 @@ class AnnotationApp(App):
         else:
             self.save()
             return False
+
+    def cache_image(self):
+        if os.path.exists("cached-images.json"):
+            with open("cached-images.json", "r") as f:
+                file_list = json.load(f)
+        else:
+            file_list = []
+        
+        if self.image_files[self.index] not in file_list:
+            file_list.append(self.image_files[self.index])
+        
+        with open("cached-images.json", "w") as f:
+            json.dump(file_list, f)
 
     def load(self):
         self.annotator.set_image(self.image_files[self.index])
@@ -292,15 +311,30 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--image-glob', required=True, type=str,
-        help='glob pattern for finding images'
+        help='glob pattern for finding images.'
     )
     parser.add_argument(
         '--visualise-only', action="store_true",
-        help='blocks annotation editing'
+        help='blocks annotation editing.'
+    )
+    parser.add_argument(
+        '--cached-only', action="store_true",
+        help='only shows files which have been cached.'
     )
     args = parser.parse_args()
 
     images = sorted(glob(args.image_glob, recursive=True))
+    
+    if args.cached_only:
+        
+        if not os.path.exists("cached-images.json"):
+            print("No cached files!")
+            quit()
+            
+        with open("cached-images.json", "r") as f:
+            file_list = json.load(f)
+            
+        images = [i for i in images if i in file_list]
         
     assert len(images) > 0, 'No images found!'
 
