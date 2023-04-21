@@ -118,6 +118,9 @@ class Skeleton():
             point = position_on_line(position, self.nodes[start], self.nodes[end])
             if np.linalg.norm(np.array(position) - np.array(point)) < 2 * self.node_radius:
                 start_pos = np.array(self.nodes[start])
+                for j, t in enumerate(map(np.array, [self.nodes[start]] + transitions + [self.nodes[end]])):
+                    if np.linalg.norm(point - t) < 2 * self.node_radius:
+                        return True
                 for j, t in enumerate(map(np.array, transitions + [self.nodes[end]])):
                     if np.linalg.norm(t - start_pos) > np.linalg.norm(point - start_pos):
                         self.transitions[i].insert(j, list(point))
