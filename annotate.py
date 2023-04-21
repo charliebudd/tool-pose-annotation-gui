@@ -118,7 +118,15 @@ class Skeleton():
             point = position_on_line(position, self.nodes[start], self.nodes[end])
             if np.linalg.norm(np.array(position) - np.array(point)) < 2 * self.node_radius:
                 start_pos = np.array(self.nodes[start])
-                for j, t in enumerate(map(np.array, [self.nodes[start]] + transitions + [self.nodes[end]])):
+                if np.linalg.norm(point - start_pos) < 2 * self.node_radius:
+                    self.tags[start] = OPPOSITE_TAG[self.tags[start]]
+                    self._clean_tags()
+                    return True
+                if np.linalg.norm(point - np.array(self.nodes[end])) < 2 * self.node_radius:
+                    self.tags[end] = OPPOSITE_TAG[self.tags[end]]
+                    self._clean_tags()
+                    return True
+                for j, t in enumerate(map(np.array, transitions)):
                     if np.linalg.norm(point - t) < 2 * self.node_radius:
                         return True
                 for j, t in enumerate(map(np.array, transitions + [self.nodes[end]])):
@@ -132,9 +140,9 @@ class Skeleton():
         for (start, end), transitions in zip(self.edges, self.transitions):
             if end >= len(self.nodes) or self.tags[end] == "missing":
                 break
-            self.tags[end] = OPPOSITE_TAG[self.tags[start]] if len(transitions) % 2 == 1 else self.tags[start]
-                
-    
+            else:
+                self.tags[end] = OPPOSITE_TAG[self.tags[start]] if len(transitions) % 2 == 1 else self.tags[start]
+
     def draw(self):
         for (start, end), transitions in zip(self.edges, self.transitions):
             if end >= len(self.nodes) or self.tags[end] == "missing":
@@ -177,7 +185,6 @@ class SkeletonAnnotator(ImageAnnotator):
         self.allow_editing = allow_editing
         self.skeletons = []
         self.current_skeleton = None
-        # self.node_radius = 4.0
         self.node_radius = 6.0
     
     @property
