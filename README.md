@@ -1,6 +1,8 @@
 # Tool Pose Annotation GUI
 Pose annotation GUI for laparoscopic surgical tools.
 
+![](demo.gif)
+
 # Usage
 Clone this repo and install the dependancies...
 ```bash
