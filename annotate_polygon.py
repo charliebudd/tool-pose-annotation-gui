@@ -109,6 +109,36 @@ def save_mask(mask: np.ndarray, path: str):
     Image.fromarray(mask.astype(np.uint8), mode="L").save(path)
 
 
+def mask_path_to_vertices_json_path(mask_path: str) -> str:
+    """Return the JSON path for vertices corresponding to a mask PNG path."""
+    base, _ = os.path.splitext(mask_path)
+    return base + ".json"
+
+
+def save_vertices_json(polygons: list[list[tuple[int, int]]], path: str):
+    """Save polygon vertices for a mask.
+
+    Format:
+      {
+        "polygons": [
+          {"vertices": [[x,y], [x,y], ...]},
+          ...
+        ]
+      }
+
+    Coordinates are image pixel coordinates.
+    """
+    ensure_dir(os.path.dirname(path))
+    payload = {
+        "polygons": [
+            {"vertices": [[int(x), int(y)] for (x, y) in poly]}
+            for poly in polygons
+        ]
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f)
+
+
 def composite_overlay(base_rgb: np.ndarray, mask: np.ndarray, alpha: float = 0.45) -> np.ndarray:
     alpha = float(np.clip(alpha, 0.0, 1.0))
     out = base_rgb.copy()
@@ -202,6 +232,10 @@ class PolygonSegAnnotator(ImageAnnotator):
         self.poly_points: list[tuple[int, int]] = []
         self.cursor_xy: tuple[int, int] | None = None
 
+        # Accumulate polygons that were finalized into the current mask.
+        # Each polygon is a list of (x, y) vertices in image pixel coordinates.
+        self.finalized_polygons: list[list[tuple[int, int]]] = []
+
     def new_image(self):
         tex = texture_to_numpy(self.texture)
         if tex is None:
@@ -225,6 +259,7 @@ class PolygonSegAnnotator(ImageAnnotator):
         self._undo_stack.clear()
         self.poly_points.clear()
         self.cursor_xy = None
+        self.finalized_polygons.clear()
 
         self._refresh_display()
 
@@ -278,6 +313,7 @@ class PolygonSegAnnotator(ImageAnnotator):
         self._undo_stack.clear()
         self.poly_points.clear()
         self.cursor_xy = None
+        self.finalized_polygons.clear()
 
         # 4) Refresh right view
         self._refresh_display()
@@ -300,6 +336,10 @@ class PolygonSegAnnotator(ImageAnnotator):
         self.push_undo()
         pts = [(int(x), int(y)) for (x, y) in self.poly_points]
         self.mask = fill_polygon_in_mask(self.mask, pts, value=255)
+
+        # Store vertices for JSON export.
+        self.finalized_polygons.append(pts)
+
         self.poly_points.clear()
         self.cursor_xy = None
         self._refresh_display()
@@ -346,6 +386,10 @@ class PolygonSegAnnotator(ImageAnnotator):
 
         ensure_dir(os.path.dirname(mask_path))
         save_mask(self.mask, mask_path)
+
+        # Also export polygon vertices as JSON alongside mask.png
+        vertices_json_path = mask_path_to_vertices_json_path(mask_path)
+        save_vertices_json(self.finalized_polygons, vertices_json_path)
 
 
 # -------------------------
