@@ -138,6 +138,34 @@ def save_vertices_json(polygons: list[list[tuple[int, int]]], path: str):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f)
 
+def load_vertices_json(path: str) -> list[list[tuple[int, int]]]:
+    """Load polygon vertices JSON saved alongside mask.
+
+    Returns a list of polygons, each polygon is a list of (x,y) ints.
+    If file missing or invalid, returns [].
+    """
+    if not path or not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        polys = payload.get("polygons", []) if isinstance(payload, dict) else []
+        out: list[list[tuple[int, int]]] = []
+        for poly in polys:
+            verts = poly.get("vertices") if isinstance(poly, dict) else None
+            if not verts:
+                continue
+            pts: list[tuple[int, int]] = []
+            for v in verts:
+                if isinstance(v, (list, tuple)) and len(v) == 2:
+                    pts.append((int(v[0]), int(v[1])))
+            if len(pts) >= 3:
+                out.append(pts)
+        return out
+    except Exception:
+        return []
+
+
 
 def composite_overlay(base_rgb: np.ndarray, mask: np.ndarray, alpha: float = 0.45) -> np.ndarray:
     alpha = float(np.clip(alpha, 0.0, 1.0))
@@ -261,6 +289,11 @@ class PolygonSegAnnotator(ImageAnnotator):
         self.cursor_xy = None
         self.finalized_polygons.clear()
 
+        # If a vertices JSON exists for this mask, load it so re-saving does not wipe it.
+        vertices_json_path = mask_path_to_vertices_json_path(self.current_mask_path)
+        self.finalized_polygons = load_vertices_json(vertices_json_path)
+
+
         self._refresh_display()
 
     def _refresh_display(self):
@@ -305,6 +338,15 @@ class PolygonSegAnnotator(ImageAnnotator):
             except Exception:
                 # If deletion fails (permissions/locked), still clear in-memory state
                 pass
+        # Also delete vertices JSON alongside mask
+        if self.current_mask_path:
+            vpath = mask_path_to_vertices_json_path(self.current_mask_path)
+            if os.path.exists(vpath):
+                try:
+                    os.remove(vpath)
+                except Exception:
+                    pass
+
 
         # 2) Clear in-memory mask
         self.mask[:] = 0
