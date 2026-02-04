@@ -1,10 +1,12 @@
 [
   {
     "ref": "images/case035/timepoint000/white.png",
-    "target": "images/case035/timepoint000/blue.png"
+    "target": "images/case035/timepoint000/blue.png",
+    "video": "images/case035/timepoint000/WhiteLight.mp4"
   },
   {
     "ref": "images/case035/timepoint001/white.png",
-    "target": "images/case035/timepoint001/blue.png"
+    "target": "images/case035/timepoint001/blue.png",
+    "video": "images/case035/timepoint001/WhiteLight.mp4"
   }
 ]

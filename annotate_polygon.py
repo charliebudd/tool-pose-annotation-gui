@@ -440,16 +440,15 @@ class PolygonSegAnnotator(ImageAnnotator):
 # App: two-panel
 # -------------------------
 class TwoPanelApp(App):
-    def __init__(self, ref_files, target_files, target_root, mask_root, allow_editing: bool):
+    def __init__(self, ref_files, target_files, video_files, target_root, mask_root, allow_editing: bool):
         super().__init__()
         self.ref_files = ref_files
         self.target_files = target_files
+        self.video_files = video_files  # NEW
         self.target_root = target_root
         self.mask_root = mask_root
         self.allow_editing = allow_editing
         self.index = 0
-
-        # Cache pristine reference pixels so left overlay is reversible
         self.ref_base_rgb: np.ndarray | None = None
 
     def _mask_path_getter(self, target_path: str, hw: tuple[int, int]):
@@ -601,54 +600,19 @@ class TwoPanelApp(App):
         self._update_info()
 
     def open_biopsy_video(self, *args):
-        """Open the biopsy video related to the current sample.
-
-        Strategy:
-        - Start from the current *target* image path.
-        - Search for video files in the current directory, then up to 3 parent levels.
-        - Prefer filenames containing "biopsy" (case-insensitive); otherwise pick the first video found.
-        - Use the OS default application to open the video.
-        """
-        if not self.target_files:
-            print("[Open Biopsy Video] No target files loaded.")
+        """Open the biopsy video for the current sample (from pairs.json 'video')."""
+        if not getattr(self, "video_files", None):
+            print("[Open Biopsy Video] No video list loaded (video_files missing).")
             return
 
-        current_target = self.target_files[self.index]
-        search_path = os.path.dirname(os.path.abspath(current_target))
-        video_extensions = [".mp4", ".avi", ".mov", ".mkv"]
-
-        biopsy_candidate = None
-        fallback_candidate = None
-
-        # Search up to 3 levels up
-        for _ in range(3):
-            if not os.path.exists(search_path):
-                break
-
-            try:
-                for fname in os.listdir(search_path):
-                    lower = fname.lower()
-                    if any(lower.endswith(ext) for ext in video_extensions):
-                        full_path = os.path.join(search_path, fname)
-                        if "biopsy" in lower and biopsy_candidate is None:
-                            biopsy_candidate = full_path
-                        if fallback_candidate is None:
-                            fallback_candidate = full_path
-            except Exception as e:
-                print(f"[Open Biopsy Video] Error listing {search_path}: {e}")
-
-            # If we already have a biopsy-specific candidate, stop early.
-            if biopsy_candidate:
-                break
-
-            parent = os.path.dirname(search_path)
-            if parent == search_path:
-                break
-            search_path = parent
-
-        video_path = biopsy_candidate or fallback_candidate
+        video_path = self.video_files[self.index] if self.index < len(self.video_files) else None
         if not video_path:
-            print("[Open Biopsy Video] No video found near:", current_target)
+            print("[Open Biopsy Video] No 'video' field for current sample.")
+            return
+
+        video_path = os.path.abspath(video_path.replace("/", os.path.sep))
+        if not os.path.exists(video_path):
+            print(f"[Open Biopsy Video] Video not found: {video_path}")
             return
 
         print(f"[Open Biopsy Video] Opening: {video_path}")
@@ -696,19 +660,21 @@ class TwoPanelApp(App):
         return False
 
 
-def load_pairs_from_json(pairs_json_path: str) -> tuple[list[str], list[str]]:
+def load_pairs_from_json(pairs_json_path: str) -> tuple[list[str], list[str], list[str | None]]:
     """
     pairs.json format:
     [
-      {"ref": ".../ref.png", "target": ".../tgt.png"},
-      {"ref": "...",        "target": "..."}
+      {"ref": ".../ref.png", "target": ".../tgt.png", "video": ".../video.mp4"},
+      ...
     ]
     """
     with open(pairs_json_path, "r", encoding="utf-8") as f:
         pairs = json.load(f)
+
     ref = [p["ref"] for p in pairs]
     tgt = [p["target"] for p in pairs]
-    return ref, tgt
+    vids = [p.get("video") for p in pairs]  # may be None / missing
+    return ref, tgt, vids
 
 
 def infer_ref_from_target(target_files: list[str], ref_root: str, target_root: str) -> list[str]:
@@ -737,7 +703,7 @@ def main():
     args = parser.parse_args()
 
     if args.pairs_json:
-        ref_files, target_files = load_pairs_from_json(args.pairs_json)
+        ref_files, target_files, video_files = load_pairs_from_json(args.pairs_json)
     else:
         if not args.target_glob or not args.ref_root:
             raise SystemExit("Provide --pairs-json OR (--target-glob AND --ref-root).")
@@ -751,6 +717,7 @@ def main():
 
     ref_files = [p.replace("/", os.path.sep) for p in ref_files]
     target_files = [p.replace("/", os.path.sep) for p in target_files]
+    video_files = [p.replace("/", os.path.sep) for p in video_files]
 
     if len(ref_files) != len(target_files):
         raise SystemExit("Reference and target lists differ in length.")
@@ -766,6 +733,7 @@ def main():
     TwoPanelApp(
         ref_files=ref_files,
         target_files=target_files,
+        video_files=video_files,  # NEW
         target_root=target_root,
         mask_root=mask_root,
         allow_editing=(not args.visualise_only),
