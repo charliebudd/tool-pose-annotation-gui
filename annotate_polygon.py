@@ -440,15 +440,25 @@ class PolygonSegAnnotator(ImageAnnotator):
 # App: two-panel
 # -------------------------
 class TwoPanelApp(App):
-    def __init__(self, ref_files, target_files, video_files, target_root, mask_root, allow_editing: bool):
+    def __init__(
+        self,
+        ref_files,
+        target_files,
+        target_root,
+        mask_root,
+        allow_editing: bool,
+        video_files: list[str | None] | None = None,
+    ):
         super().__init__()
         self.ref_files = ref_files
         self.target_files = target_files
-        self.video_files = video_files  # NEW
         self.target_root = target_root
         self.mask_root = mask_root
         self.allow_editing = allow_editing
+        self.video_files = video_files or [None] * len(target_files)
         self.index = 0
+
+        # Cache pristine reference pixels so left overlay is reversible
         self.ref_base_rgb: np.ndarray | None = None
 
     def _mask_path_getter(self, target_path: str, hw: tuple[int, int]):
@@ -600,19 +610,79 @@ class TwoPanelApp(App):
         self._update_info()
 
     def open_biopsy_video(self, *args):
-        """Open the biopsy video for the current sample (from pairs.json 'video')."""
-        if not getattr(self, "video_files", None):
-            print("[Open Biopsy Video] No video list loaded (video_files missing).")
+        """Open the biopsy video related to the current sample.
+
+        Strategy:
+        - Use video paths from pairs.json when available.
+        - Start from the current *target* image path.
+        - Search for video files in the current directory, then up to 3 parent levels.
+        - Prefer filenames containing "biopsy" (case-insensitive); otherwise pick the first video found.
+        - Use the OS default application to open the video.
+        """
+        if not self.target_files:
+            print("[Open Biopsy Video] No target files loaded.")
             return
 
-        video_path = self.video_files[self.index] if self.index < len(self.video_files) else None
+        current_target = self.target_files[self.index]
+        video_path = None
+        if self.video_files and self.index < len(self.video_files):
+            candidate = self.video_files[self.index]
+            if candidate:
+                video_path = candidate
+                if not os.path.isabs(video_path):
+                    video_path = os.path.abspath(video_path)
+                if not os.path.exists(video_path):
+                    print(f"[Open Biopsy Video] Video path not found: {video_path}")
+                    video_path = None
+
+        if video_path:
+            print(f"[Open Biopsy Video] Opening: {video_path}")
+            try:
+                if sys.platform == "win32":
+                    os.startfile(video_path)  # type: ignore[attr-defined]
+                elif sys.platform == "darwin":
+                    subprocess.call(("open", video_path))
+                else:
+                    subprocess.call(("xdg-open", video_path))
+            except Exception as e:
+                print(f"[Open Biopsy Video] Error opening video: {e}")
+            return
+
+        search_path = os.path.dirname(os.path.abspath(current_target))
+        video_extensions = [".mp4", ".avi", ".mov", ".mkv"]
+
+        biopsy_candidate = None
+        fallback_candidate = None
+
+        # Search up to 3 levels up
+        for _ in range(3):
+            if not os.path.exists(search_path):
+                break
+
+            try:
+                for fname in os.listdir(search_path):
+                    lower = fname.lower()
+                    if any(lower.endswith(ext) for ext in video_extensions):
+                        full_path = os.path.join(search_path, fname)
+                        if "biopsy" in lower and biopsy_candidate is None:
+                            biopsy_candidate = full_path
+                        if fallback_candidate is None:
+                            fallback_candidate = full_path
+            except Exception as e:
+                print(f"[Open Biopsy Video] Error listing {search_path}: {e}")
+
+            # If we already have a biopsy-specific candidate, stop early.
+            if biopsy_candidate:
+                break
+
+            parent = os.path.dirname(search_path)
+            if parent == search_path:
+                break
+            search_path = parent
+
+        video_path = biopsy_candidate or fallback_candidate
         if not video_path:
-            print("[Open Biopsy Video] No 'video' field for current sample.")
-            return
-
-        video_path = os.path.abspath(video_path.replace("/", os.path.sep))
-        if not os.path.exists(video_path):
-            print(f"[Open Biopsy Video] Video not found: {video_path}")
+            print("[Open Biopsy Video] No video found near:", current_target)
             return
 
         print(f"[Open Biopsy Video] Opening: {video_path}")
@@ -665,16 +735,21 @@ def load_pairs_from_json(pairs_json_path: str) -> tuple[list[str], list[str], li
     pairs.json format:
     [
       {"ref": ".../ref.png", "target": ".../tgt.png", "video": ".../video.mp4"},
-      ...
+      {"ref": "...",        "target": "..."}
     ]
     """
     with open(pairs_json_path, "r", encoding="utf-8") as f:
         pairs = json.load(f)
-
     ref = [p["ref"] for p in pairs]
     tgt = [p["target"] for p in pairs]
-    vids = [p.get("video") for p in pairs]  # may be None / missing
-    return ref, tgt, vids
+    base_dir = os.path.dirname(os.path.abspath(pairs_json_path))
+    video = []
+    for p in pairs:
+        v = p.get("video")
+        if v:
+            v = os.path.join(base_dir, v) if not os.path.isabs(v) else v
+        video.append(v)
+    return ref, tgt, video
 
 
 def infer_ref_from_target(target_files: list[str], ref_root: str, target_root: str) -> list[str]:
@@ -714,10 +789,10 @@ def main():
         if target_root is None:
             target_root = os.path.commonpath(target_files)
         ref_files = infer_ref_from_target(target_files, args.ref_root, target_root)
+        video_files = [None] * len(target_files)
 
     ref_files = [p.replace("/", os.path.sep) for p in ref_files]
     target_files = [p.replace("/", os.path.sep) for p in target_files]
-    video_files = [p.replace("/", os.path.sep) for p in video_files]
 
     if len(ref_files) != len(target_files):
         raise SystemExit("Reference and target lists differ in length.")
@@ -733,10 +808,10 @@ def main():
     TwoPanelApp(
         ref_files=ref_files,
         target_files=target_files,
-        video_files=video_files,  # NEW
         target_root=target_root,
         mask_root=mask_root,
         allow_editing=(not args.visualise_only),
+        video_files=video_files,
     ).run()
 
 
