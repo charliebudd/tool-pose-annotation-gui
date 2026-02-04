@@ -25,6 +25,8 @@ Assumptions
 import os
 import json
 import argparse
+import subprocess
+import sys
 from glob import glob
 
 import numpy as np
@@ -505,12 +507,19 @@ class TwoPanelApp(App):
             size_hint=(0.22, 0.04),
             pos_hint={"right": 0.99, "top": 0.94},
         )
+        self.open_biopsy_button = Button(
+            text="Open Biopsy Video",
+            size_hint=(0.25, 0.04),
+            pos_hint={"right": 0.75, "top": 0.98},
+        )
 
         self.revert_mask_button.bind(on_press=lambda *_: self._on_revert())
         self.undo_vertex_button.bind(on_press=lambda *_: self.ann_view.undo_vertex())
+        self.open_biopsy_button.bind(on_press=lambda *_: self.open_biopsy_video())
 
         self.root.add_widget(self.revert_mask_button)
         self.root.add_widget(self.undo_vertex_button)
+        self.root.add_widget(self.open_biopsy_button)
 
         Window.bind(on_key_down=self.key_down)
         Window.bind(on_request_close=self.on_request_close)
@@ -590,6 +599,68 @@ class TwoPanelApp(App):
         Clock.schedule_once(lambda *_: self._refresh_ref_clear(), 0)
 
         self._update_info()
+
+    def open_biopsy_video(self, *args):
+        """Open the biopsy video related to the current sample.
+
+        Strategy:
+        - Start from the current *target* image path.
+        - Search for video files in the current directory, then up to 3 parent levels.
+        - Prefer filenames containing "biopsy" (case-insensitive); otherwise pick the first video found.
+        - Use the OS default application to open the video.
+        """
+        if not self.target_files:
+            print("[Open Biopsy Video] No target files loaded.")
+            return
+
+        current_target = self.target_files[self.index]
+        search_path = os.path.dirname(os.path.abspath(current_target))
+        video_extensions = [".mp4", ".avi", ".mov", ".mkv"]
+
+        biopsy_candidate = None
+        fallback_candidate = None
+
+        # Search up to 3 levels up
+        for _ in range(3):
+            if not os.path.exists(search_path):
+                break
+
+            try:
+                for fname in os.listdir(search_path):
+                    lower = fname.lower()
+                    if any(lower.endswith(ext) for ext in video_extensions):
+                        full_path = os.path.join(search_path, fname)
+                        if "biopsy" in lower and biopsy_candidate is None:
+                            biopsy_candidate = full_path
+                        if fallback_candidate is None:
+                            fallback_candidate = full_path
+            except Exception as e:
+                print(f"[Open Biopsy Video] Error listing {search_path}: {e}")
+
+            # If we already have a biopsy-specific candidate, stop early.
+            if biopsy_candidate:
+                break
+
+            parent = os.path.dirname(search_path)
+            if parent == search_path:
+                break
+            search_path = parent
+
+        video_path = biopsy_candidate or fallback_candidate
+        if not video_path:
+            print("[Open Biopsy Video] No video found near:", current_target)
+            return
+
+        print(f"[Open Biopsy Video] Opening: {video_path}")
+        try:
+            if sys.platform == "win32":
+                os.startfile(video_path)  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.call(("open", video_path))
+            else:
+                subprocess.call(("xdg-open", video_path))
+        except Exception as e:
+            print(f"[Open Biopsy Video] Error opening video: {e}")
 
     def key_down(self, instance, keyboard, keycode, text, modifiers):
         if keycode == ENTER_KEYCODE:
