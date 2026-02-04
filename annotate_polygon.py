@@ -440,13 +440,22 @@ class PolygonSegAnnotator(ImageAnnotator):
 # App: two-panel
 # -------------------------
 class TwoPanelApp(App):
-    def __init__(self, ref_files, target_files, target_root, mask_root, allow_editing: bool):
+    def __init__(
+        self,
+        ref_files,
+        target_files,
+        target_root,
+        mask_root,
+        allow_editing: bool,
+        video_files: list[str | None] | None = None,
+    ):
         super().__init__()
         self.ref_files = ref_files
         self.target_files = target_files
         self.target_root = target_root
         self.mask_root = mask_root
         self.allow_editing = allow_editing
+        self.video_files = video_files or [None] * len(target_files)
         self.index = 0
 
         # Cache pristine reference pixels so left overlay is reversible
@@ -604,6 +613,7 @@ class TwoPanelApp(App):
         """Open the biopsy video related to the current sample.
 
         Strategy:
+        - Use video paths from pairs.json when available.
         - Start from the current *target* image path.
         - Search for video files in the current directory, then up to 3 parent levels.
         - Prefer filenames containing "biopsy" (case-insensitive); otherwise pick the first video found.
@@ -614,6 +624,30 @@ class TwoPanelApp(App):
             return
 
         current_target = self.target_files[self.index]
+        video_path = None
+        if self.video_files and self.index < len(self.video_files):
+            candidate = self.video_files[self.index]
+            if candidate:
+                video_path = candidate
+                if not os.path.isabs(video_path):
+                    video_path = os.path.abspath(video_path)
+                if not os.path.exists(video_path):
+                    print(f"[Open Biopsy Video] Video path not found: {video_path}")
+                    video_path = None
+
+        if video_path:
+            print(f"[Open Biopsy Video] Opening: {video_path}")
+            try:
+                if sys.platform == "win32":
+                    os.startfile(video_path)  # type: ignore[attr-defined]
+                elif sys.platform == "darwin":
+                    subprocess.call(("open", video_path))
+                else:
+                    subprocess.call(("xdg-open", video_path))
+            except Exception as e:
+                print(f"[Open Biopsy Video] Error opening video: {e}")
+            return
+
         search_path = os.path.dirname(os.path.abspath(current_target))
         video_extensions = [".mp4", ".avi", ".mov", ".mkv"]
 
@@ -696,11 +730,11 @@ class TwoPanelApp(App):
         return False
 
 
-def load_pairs_from_json(pairs_json_path: str) -> tuple[list[str], list[str]]:
+def load_pairs_from_json(pairs_json_path: str) -> tuple[list[str], list[str], list[str | None]]:
     """
     pairs.json format:
     [
-      {"ref": ".../ref.png", "target": ".../tgt.png"},
+      {"ref": ".../ref.png", "target": ".../tgt.png", "video": ".../video.mp4"},
       {"ref": "...",        "target": "..."}
     ]
     """
@@ -708,7 +742,14 @@ def load_pairs_from_json(pairs_json_path: str) -> tuple[list[str], list[str]]:
         pairs = json.load(f)
     ref = [p["ref"] for p in pairs]
     tgt = [p["target"] for p in pairs]
-    return ref, tgt
+    base_dir = os.path.dirname(os.path.abspath(pairs_json_path))
+    video = []
+    for p in pairs:
+        v = p.get("video")
+        if v:
+            v = os.path.join(base_dir, v) if not os.path.isabs(v) else v
+        video.append(v)
+    return ref, tgt, video
 
 
 def infer_ref_from_target(target_files: list[str], ref_root: str, target_root: str) -> list[str]:
@@ -737,7 +778,7 @@ def main():
     args = parser.parse_args()
 
     if args.pairs_json:
-        ref_files, target_files = load_pairs_from_json(args.pairs_json)
+        ref_files, target_files, video_files = load_pairs_from_json(args.pairs_json)
     else:
         if not args.target_glob or not args.ref_root:
             raise SystemExit("Provide --pairs-json OR (--target-glob AND --ref-root).")
@@ -748,6 +789,7 @@ def main():
         if target_root is None:
             target_root = os.path.commonpath(target_files)
         ref_files = infer_ref_from_target(target_files, args.ref_root, target_root)
+        video_files = [None] * len(target_files)
 
     ref_files = [p.replace("/", os.path.sep) for p in ref_files]
     target_files = [p.replace("/", os.path.sep) for p in target_files]
@@ -769,6 +811,7 @@ def main():
         target_root=target_root,
         mask_root=mask_root,
         allow_editing=(not args.visualise_only),
+        video_files=video_files,
     ).run()
 
 
