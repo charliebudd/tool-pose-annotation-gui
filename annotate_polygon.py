@@ -21,6 +21,7 @@ Mask
 Assumptions
 - You have src.ImageAnnotator with set_image(), texture, draw(), and event routing.
 """
+from __future__ import annotations
 
 import os
 import json
@@ -518,8 +519,8 @@ class TwoPanelApp(App):
         )
         self.open_biopsy_button = Button(
             text="Open Biopsy Video",
-            size_hint=(0.25, 0.04),
-            pos_hint={"right": 0.75, "top": 0.98},
+            size_hint=(0.22, 0.04),
+            pos_hint={"right": 0.62, "top": 0.94},
         )
 
         self.revert_mask_button.bind(on_press=lambda *_: self._on_revert())
