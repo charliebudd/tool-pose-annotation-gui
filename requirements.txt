@@ -1,3 +1,4 @@
 numpy
 kivy
 pillow
+pytest
