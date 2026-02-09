@@ -43,6 +43,7 @@ class TwoPanelApp(App):
         allow_editing: bool,
         video_files: list[str | None] | None = None,
         pairs_json_path: str | None = None,
+        pairs_root: str | None = None,
     ):
         super().__init__()
         self.ref_files = ref_files
@@ -52,6 +53,7 @@ class TwoPanelApp(App):
         self.allow_editing = allow_editing
         self.video_files = video_files or [None] * len(target_files)
         self.pairs_json_path = pairs_json_path
+        self.pairs_root = pairs_root
         self.index = 0
         self.ref_base_rgb = None
         self._updating_motion_blur_checkbox = False
@@ -103,8 +105,8 @@ class TwoPanelApp(App):
             size_hint=(0.22, 0.04),
             pos_hint={"right": 0.99, "top": 0.94},
         )
-        self.open_biopsy_button = Button(
-            text="Open Biopsy Video",
+        self.open_kinevo_button = Button(
+            text="Open Kinevo Folder",
             size_hint=(0.22, 0.04),
             pos_hint={"right": 0.99, "top": 0.10},
         )
@@ -133,12 +135,12 @@ class TwoPanelApp(App):
 
         self.revert_mask_button.bind(on_press=lambda *_: self._on_revert())
         self.undo_vertex_button.bind(on_press=lambda *_: self.ann_view.undo_vertex())
-        self.open_biopsy_button.bind(on_press=lambda *_: self.open_biopsy_video())
+        self.open_kinevo_button.bind(on_press=lambda *_: self.open_kinevo_folder())
         self.motion_blur_checkbox.bind(active=self._on_motion_blur_toggled)
 
         self.root.add_widget(self.revert_mask_button)
         self.root.add_widget(self.undo_vertex_button)
-        self.root.add_widget(self.open_biopsy_button)
+        self.root.add_widget(self.open_kinevo_button)
         self.root.add_widget(self.motion_blur_label)
         self.root.add_widget(self.motion_blur_checkbox)
         self.root.add_widget(self.biopsy_label)
@@ -247,82 +249,40 @@ class TwoPanelApp(App):
         Clock.schedule_once(lambda *_: self._refresh_ref_clear(), 0)
         self._update_info()
 
-    def open_biopsy_video(self, *args):
+    def open_kinevo_folder(self, *args):
         del args
-        if not self.target_files:
-            print("[Open Biopsy Video] No target files loaded.")
+        if not self.pairs_json_path:
+            print("[Open Kinevo Folder] No pairs.json configured.")
             return
 
-        current_target = self.target_files[self.index]
-        video_path = None
-        if self.video_files and self.index < len(self.video_files):
-            candidate = self.video_files[self.index]
-            if candidate:
-                video_path = candidate
-                if not os.path.isabs(video_path):
-                    video_path = os.path.abspath(video_path)
-                if not os.path.exists(video_path):
-                    print(f"[Open Biopsy Video] Video path not found: {video_path}")
-                    video_path = None
-
-        if video_path:
-            print(f"[Open Biopsy Video] Opening: {video_path}")
-            try:
-                if sys.platform == "win32":
-                    os.startfile(video_path)  # type: ignore[attr-defined]
-                elif sys.platform == "darwin":
-                    subprocess.call(("open", video_path))
-                else:
-                    subprocess.call(("xdg-open", video_path))
-            except Exception as e:
-                print(f"[Open Biopsy Video] Error opening video: {e}")
-            return
-
-        search_path = os.path.dirname(os.path.abspath(current_target))
-        video_extensions = [".mp4", ".avi", ".mov", ".mkv"]
-
-        biopsy_candidate = None
-        fallback_candidate = None
-
-        for _ in range(3):
-            if not os.path.exists(search_path):
-                break
-
-            try:
-                for fname in os.listdir(search_path):
-                    lower = fname.lower()
-                    if any(lower.endswith(ext) for ext in video_extensions):
-                        full_path = os.path.join(search_path, fname)
-                        if "biopsy" in lower and biopsy_candidate is None:
-                            biopsy_candidate = full_path
-                        if fallback_candidate is None:
-                            fallback_candidate = full_path
-            except Exception as e:
-                print(f"[Open Biopsy Video] Error listing {search_path}: {e}")
-
-            if biopsy_candidate:
-                break
-
-            parent = os.path.dirname(search_path)
-            if parent == search_path:
-                break
-            search_path = parent
-
-        video_path = biopsy_candidate or fallback_candidate
-        if not video_path:
-            print("[Open Biopsy Video] No video found near:", current_target)
-            return
-
-        print(f"[Open Biopsy Video] Opening: {video_path}")
         try:
+            payload = load_pairs_payload(self.pairs_json_path)
+            if self.index >= len(payload):
+                print(f"[Open Kinevo Folder] Pair index out of range: {self.index}")
+                return
+            kinevo_path = payload[self.index].get("kinevo")
+            if not kinevo_path:
+                print("[Open Kinevo Folder] No 'kinevo' path for this pair.")
+                return
+
+            if not os.path.isabs(kinevo_path):
+                base_root = self.pairs_root or os.path.dirname(os.path.abspath(self.pairs_json_path))
+                kinevo_path = os.path.join(base_root, kinevo_path.replace("/", os.path.sep))
+            kinevo_path = os.path.abspath(kinevo_path)
+            if not os.path.isdir(kinevo_path):
+                print(f"[Open Kinevo Folder] Folder not found: {kinevo_path}")
+                return
+
+            print(f"[Open Kinevo Folder] Opening: {kinevo_path}")
             if sys.platform == "win32":
-                os.startfile(video_path)  # type: ignore[attr-defined]
+                os.startfile(kinevo_path)  # type: ignore[attr-defined]
             elif sys.platform == "darwin":
-                subprocess.call(("open", video_path))
+                subprocess.call(("open", kinevo_path))
             else:
-                subprocess.call(("xdg-open", video_path))
+                subprocess.call(("xdg-open", kinevo_path))
         except Exception as e:
-            print(f"[Open Biopsy Video] Error opening video: {e}")
+            print(f"[Open Kinevo Folder] Error opening folder: {e}")
+            return
 
     def key_down(self, instance, keyboard, keycode, text, modifiers):
         del instance, keyboard, text, modifiers

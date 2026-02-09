@@ -93,6 +93,7 @@ def main():
         ref_files = infer_ref_from_target(target_files, args.ref_root, target_root)
         video_files = [None] * len(target_files)
         pairs_json_path = None
+        pairs_root = None
         ref_files = [p.replace("/", os.path.sep) for p in ref_files]
         target_files = [p.replace("/", os.path.sep) for p in target_files]
 
@@ -116,4 +117,5 @@ def main():
         allow_editing=(not args.visualise_only),
         video_files=video_files,
         pairs_json_path=pairs_json_path,
+        pairs_root=pairs_root,
     ).run()
