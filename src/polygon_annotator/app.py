@@ -23,7 +23,12 @@ from .constants import (
     U_KEYCODE,
 )
 from .mask_ops import blit_numpy_to_texture, composite_overlay, get_rgb_from_texture
-from .pairs import get_motion_blur_from_payload, load_pairs_payload, update_motion_blur_in_json
+from .pairs import (
+    get_biopsy_from_payload,
+    get_motion_blur_from_payload,
+    load_pairs_payload,
+    update_motion_blur_in_json,
+)
 from .pathing import mask_path_for_target
 from .views import PolygonSegAnnotator, ReferenceViewer
 
@@ -114,6 +119,17 @@ class TwoPanelApp(App):
             pos_hint={"right": 0.17, "top": 0.10},
             disabled=(not self.allow_editing) or (not self.pairs_json_path),
         )
+        self.biopsy_label = Label(
+            text="Biopsy",
+            size_hint=(0.12, 0.04),
+            pos_hint={"right": 0.31, "top": 0.10},
+            color=(1, 1, 1, 1),
+        )
+        self.biopsy_checkbox = CheckBox(
+            size_hint=(0.04, 0.04),
+            pos_hint={"right": 0.33, "top": 0.10},
+            disabled=True,
+        )
 
         self.revert_mask_button.bind(on_press=lambda *_: self._on_revert())
         self.undo_vertex_button.bind(on_press=lambda *_: self.ann_view.undo_vertex())
@@ -125,6 +141,8 @@ class TwoPanelApp(App):
         self.root.add_widget(self.open_biopsy_button)
         self.root.add_widget(self.motion_blur_label)
         self.root.add_widget(self.motion_blur_checkbox)
+        self.root.add_widget(self.biopsy_label)
+        self.root.add_widget(self.biopsy_checkbox)
 
         Window.bind(on_key_down=self.key_down)
         Window.bind(on_request_close=self.on_request_close)
@@ -174,7 +192,7 @@ class TwoPanelApp(App):
 
         self.ann_view.current_target_path = tgt_path
         self.ann_view.set_image(tgt_path)
-        self._sync_motion_blur_checkbox()
+        self._sync_pair_metadata_widgets()
         self._update_info()
 
         def _after_loaded(*_):
@@ -185,21 +203,26 @@ class TwoPanelApp(App):
 
         Clock.schedule_once(_after_loaded, 0)
 
-    def _sync_motion_blur_checkbox(self):
-        value = False
+    def _sync_pair_metadata_widgets(self):
+        motion_blur = False
+        biopsy = None
         if self.pairs_json_path:
             try:
                 payload = load_pairs_payload(self.pairs_json_path)
-                value = get_motion_blur_from_payload(payload, self.index)
+                motion_blur = get_motion_blur_from_payload(payload, self.index)
+                biopsy = get_biopsy_from_payload(payload, self.index)
             except Exception as e:
-                print(f"[Motion Blur] Could not load state from {self.pairs_json_path}: {e}")
-                value = False
+                print(f"[Pair Metadata] Could not load state from {self.pairs_json_path}: {e}")
+                motion_blur = False
+                biopsy = None
 
         self._updating_motion_blur_checkbox = True
         try:
-            self.motion_blur_checkbox.active = value
+            self.motion_blur_checkbox.active = motion_blur
         finally:
             self._updating_motion_blur_checkbox = False
+
+        self.biopsy_checkbox.active = bool(biopsy)
 
     def _on_motion_blur_toggled(self, _checkbox, value):
         if self._updating_motion_blur_checkbox:

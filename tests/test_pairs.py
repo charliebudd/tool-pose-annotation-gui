@@ -2,6 +2,7 @@ import json
 import os
 
 from src.polygon_annotator.pairs import (
+    get_biopsy_from_pair,
     get_motion_blur_from_pair,
     infer_ref_from_target,
     load_pairs_from_json,
@@ -41,6 +42,12 @@ def test_load_pairs_from_json_supports_white_blue_schema(tmp_path):
 
 def test_motion_blur_defaults_false_when_missing():
     assert get_motion_blur_from_pair({"white": "a", "blue": "b"}) is False
+
+
+def test_biopsy_reads_true_false_and_missing():
+    assert get_biopsy_from_pair({"Biopsy": True}) is True
+    assert get_biopsy_from_pair({"Biopsy": False}) is False
+    assert get_biopsy_from_pair({"white": "a", "blue": "b"}) is None
 
 
 def test_update_motion_blur_in_json_updates_only_targeted_item(tmp_path):

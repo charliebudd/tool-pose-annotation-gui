@@ -32,10 +32,23 @@ def get_motion_blur_from_pair(pair: dict) -> bool:
     return bool(pair.get("motion_blur", False))
 
 
+def get_biopsy_from_pair(pair: dict) -> bool | None:
+    value = pair.get("Biopsy")
+    if value is None:
+        return None
+    return bool(value)
+
+
 def get_motion_blur_from_payload(payload: list[dict], index: int) -> bool:
     if index < 0 or index >= len(payload):
         raise IndexError(f"Pair index out of range: {index}")
     return get_motion_blur_from_pair(payload[index])
+
+
+def get_biopsy_from_payload(payload: list[dict], index: int) -> bool | None:
+    if index < 0 or index >= len(payload):
+        raise IndexError(f"Pair index out of range: {index}")
+    return get_biopsy_from_pair(payload[index])
 
 
 def set_motion_blur_in_payload(payload: list[dict], index: int, value: bool) -> None:
