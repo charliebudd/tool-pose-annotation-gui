@@ -1,5 +1,5 @@
-# Tool Pose Annotation GUI
-Pose annotation GUI for laparoscopic surgical tools.
+# Annotation GUI
+Polygon-style annotation GUI.
 
 [//]: # (![]&#40;demo.gif&#41;)
 
