@@ -13,6 +13,7 @@ from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.label import Label
+from kivy.uix.textinput import TextInput
 
 from .constants import (
     ENTER_KEYCODE,
@@ -110,6 +111,24 @@ class TwoPanelApp(App):
             size_hint=(0.22, 0.04),
             pos_hint={"right": 0.99, "top": 0.10},
         )
+        self.frame_id_label = Label(
+            text="Frame ID",
+            size_hint=(0.10, 0.04),
+            pos_hint={"right": 0.52, "top": 0.10},
+            color=(1, 1, 1, 1),
+        )
+        self.frame_id_input = TextInput(
+            multiline=False,
+            size_hint=(0.08, 0.04),
+            pos_hint={"right": 0.58, "top": 0.10},
+            input_filter="int",
+            hint_text="1-based",
+        )
+        self.jump_button = Button(
+            text="Go",
+            size_hint=(0.06, 0.04),
+            pos_hint={"right": 0.65, "top": 0.10},
+        )
         self.motion_blur_label = Label(
             text="Motion Blur",
             size_hint=(0.12, 0.04),
@@ -136,11 +155,16 @@ class TwoPanelApp(App):
         self.revert_mask_button.bind(on_press=lambda *_: self._on_revert())
         self.undo_vertex_button.bind(on_press=lambda *_: self.ann_view.undo_vertex())
         self.open_kinevo_button.bind(on_press=lambda *_: self.open_kinevo_folder())
+        self.jump_button.bind(on_press=lambda *_: self.jump_to_frame_id())
+        self.frame_id_input.bind(on_text_validate=lambda *_: self.jump_to_frame_id())
         self.motion_blur_checkbox.bind(active=self._on_motion_blur_toggled)
 
         self.root.add_widget(self.revert_mask_button)
         self.root.add_widget(self.undo_vertex_button)
         self.root.add_widget(self.open_kinevo_button)
+        self.root.add_widget(self.frame_id_label)
+        self.root.add_widget(self.frame_id_input)
+        self.root.add_widget(self.jump_button)
         self.root.add_widget(self.motion_blur_label)
         self.root.add_widget(self.motion_blur_checkbox)
         self.root.add_widget(self.biopsy_label)
@@ -159,7 +183,7 @@ class TwoPanelApp(App):
     def _update_info(self):
         ref = self.ref_files[self.index]
         tgt = self.target_files[self.index]
-        self.info.text = f"{self.index+1}/{len(self.target_files)} | REF: {ref} | TGT: {tgt}"
+        self.info.text = f"{self.index+1}/{len(self.target_files)} \n REF: {ref} \n TGT: {tgt}"
 
     def _cache_ref_base(self, *_):
         rgb = get_rgb_from_texture(self.ref_view.texture)
@@ -248,6 +272,31 @@ class TwoPanelApp(App):
         self.ann_view.revert_mask()
         Clock.schedule_once(lambda *_: self._refresh_ref_clear(), 0)
         self._update_info()
+
+    def jump_to_frame_id(self, *args):
+        del args
+        value = self.frame_id_input.text.strip()
+        if not value:
+            print("[Jump] Please enter a frame ID.")
+            return
+
+        try:
+            frame_id = int(value)
+        except ValueError:
+            print(f"[Jump] Invalid frame ID: {value}")
+            return
+
+        if frame_id < 1 or frame_id > len(self.target_files):
+            print(f"[Jump] Frame ID out of range: {frame_id} (valid: 1-{len(self.target_files)})")
+            return
+
+        new_index = frame_id - 1
+        if new_index == self.index:
+            return
+
+        self.save()
+        self.index = new_index
+        self.load()
 
     def open_kinevo_folder(self, *args):
         del args
