@@ -10,6 +10,7 @@ from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
+from kivy.uix.checkbox import CheckBox
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.label import Label
 
@@ -22,6 +23,7 @@ from .constants import (
     U_KEYCODE,
 )
 from .mask_ops import blit_numpy_to_texture, composite_overlay, get_rgb_from_texture
+from .pairs import get_motion_blur_from_payload, load_pairs_payload, update_motion_blur_in_json
 from .pathing import mask_path_for_target
 from .views import PolygonSegAnnotator, ReferenceViewer
 
@@ -35,6 +37,7 @@ class TwoPanelApp(App):
         mask_root,
         allow_editing: bool,
         video_files: list[str | None] | None = None,
+        pairs_json_path: str | None = None,
     ):
         super().__init__()
         self.ref_files = ref_files
@@ -43,8 +46,10 @@ class TwoPanelApp(App):
         self.mask_root = mask_root
         self.allow_editing = allow_editing
         self.video_files = video_files or [None] * len(target_files)
+        self.pairs_json_path = pairs_json_path
         self.index = 0
         self.ref_base_rgb = None
+        self._updating_motion_blur_checkbox = False
 
     def _mask_path_getter(self, target_path: str, hw: tuple[int, int]):
         del hw
@@ -96,16 +101,30 @@ class TwoPanelApp(App):
         self.open_biopsy_button = Button(
             text="Open Biopsy Video",
             size_hint=(0.22, 0.04),
-            pos_hint={"right": 0.62, "top": 0.94},
+            pos_hint={"right": 0.99, "top": 0.10},
+        )
+        self.motion_blur_label = Label(
+            text="Motion Blur",
+            size_hint=(0.12, 0.04),
+            pos_hint={"right": 0.15, "top": 0.10},
+            color=(1, 1, 1, 1),
+        )
+        self.motion_blur_checkbox = CheckBox(
+            size_hint=(0.04, 0.04),
+            pos_hint={"right": 0.17, "top": 0.10},
+            disabled=(not self.allow_editing) or (not self.pairs_json_path),
         )
 
         self.revert_mask_button.bind(on_press=lambda *_: self._on_revert())
         self.undo_vertex_button.bind(on_press=lambda *_: self.ann_view.undo_vertex())
         self.open_biopsy_button.bind(on_press=lambda *_: self.open_biopsy_video())
+        self.motion_blur_checkbox.bind(active=self._on_motion_blur_toggled)
 
         self.root.add_widget(self.revert_mask_button)
         self.root.add_widget(self.undo_vertex_button)
         self.root.add_widget(self.open_biopsy_button)
+        self.root.add_widget(self.motion_blur_label)
+        self.root.add_widget(self.motion_blur_checkbox)
 
         Window.bind(on_key_down=self.key_down)
         Window.bind(on_request_close=self.on_request_close)
@@ -155,6 +174,7 @@ class TwoPanelApp(App):
 
         self.ann_view.current_target_path = tgt_path
         self.ann_view.set_image(tgt_path)
+        self._sync_motion_blur_checkbox()
         self._update_info()
 
         def _after_loaded(*_):
@@ -164,6 +184,37 @@ class TwoPanelApp(App):
                 self._refresh_ref_clear()
 
         Clock.schedule_once(_after_loaded, 0)
+
+    def _sync_motion_blur_checkbox(self):
+        value = False
+        if self.pairs_json_path:
+            try:
+                payload = load_pairs_payload(self.pairs_json_path)
+                value = get_motion_blur_from_payload(payload, self.index)
+            except Exception as e:
+                print(f"[Motion Blur] Could not load state from {self.pairs_json_path}: {e}")
+                value = False
+
+        self._updating_motion_blur_checkbox = True
+        try:
+            self.motion_blur_checkbox.active = value
+        finally:
+            self._updating_motion_blur_checkbox = False
+
+    def _on_motion_blur_toggled(self, _checkbox, value):
+        if self._updating_motion_blur_checkbox:
+            return
+        if not self.allow_editing:
+            return
+        if not self.pairs_json_path:
+            print("[Motion Blur] No pairs.json configured. Use --pairs-json to persist metadata.")
+            return
+
+        try:
+            update_motion_blur_in_json(self.pairs_json_path, self.index, value)
+            print(f"[Motion Blur] Saved pair {self.index}: motion_blur={bool(value)}")
+        except Exception as e:
+            print(f"[Motion Blur] Failed to save motion_blur in {self.pairs_json_path}: {e}")
 
     def save(self):
         self.ann_view.save_current_mask()

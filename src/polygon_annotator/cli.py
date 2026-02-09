@@ -16,6 +16,16 @@ from .io_utils import ensure_dir
 from .pairs import infer_ref_from_target, load_pairs_from_json
 
 
+def _resolve_pair_paths(paths: list[str], root: str | None) -> list[str]:
+    resolved = []
+    for p in paths:
+        norm = p.replace("/", os.path.sep)
+        if root and not os.path.isabs(norm):
+            norm = os.path.join(root, norm)
+        resolved.append(norm)
+    return resolved
+
+
 def main():
     parser = argparse.ArgumentParser()
 
@@ -30,6 +40,15 @@ def main():
         type=str,
         default=None,
         help="Glob for target images to annotate (e.g., targets/**/*.png).",
+    )
+    parser.add_argument(
+        "--pairs-root",
+        type=str,
+        default="./images",
+        help=(
+            "Base folder for relative ref/target paths loaded from --pairs-json. "
+            "Example: --pairs-root ./images"
+        ),
     )
     parser.add_argument(
         "--target-root",
@@ -58,6 +77,10 @@ def main():
 
     if args.pairs_json:
         ref_files, target_files, video_files = load_pairs_from_json(args.pairs_json)
+        pairs_json_path = args.pairs_json
+        pairs_root = args.pairs_root.replace("/", os.path.sep) if args.pairs_root else None
+        ref_files = _resolve_pair_paths(ref_files, pairs_root)
+        target_files = _resolve_pair_paths(target_files, pairs_root)
     else:
         if not args.target_glob or not args.ref_root:
             raise SystemExit("Provide --pairs-json OR (--target-glob AND --ref-root).")
@@ -69,12 +92,13 @@ def main():
             target_root = os.path.commonpath(target_files)
         ref_files = infer_ref_from_target(target_files, args.ref_root, target_root)
         video_files = [None] * len(target_files)
-
-    ref_files = [p.replace("/", os.path.sep) for p in ref_files]
-    target_files = [p.replace("/", os.path.sep) for p in target_files]
+        pairs_json_path = None
+        ref_files = [p.replace("/", os.path.sep) for p in ref_files]
+        target_files = [p.replace("/", os.path.sep) for p in target_files]
 
     if len(ref_files) != len(target_files):
         raise SystemExit("Reference and target lists differ in length.")
+
     missing_ref = [p for p in ref_files if not os.path.exists(p)]
     if missing_ref:
         raise SystemExit(f"Missing reference files (first 5): {missing_ref[:5]}")
@@ -91,4 +115,5 @@ def main():
         mask_root=mask_root,
         allow_editing=(not args.visualise_only),
         video_files=video_files,
+        pairs_json_path=pairs_json_path,
     ).run()
