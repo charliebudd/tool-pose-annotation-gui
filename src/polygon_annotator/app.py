@@ -23,7 +23,7 @@ from .constants import (
     R_KEYCODE,
     U_KEYCODE,
 )
-from .mask_ops import blit_numpy_to_texture, composite_overlay, get_rgb_from_texture
+from .mask_ops import blit_numpy_to_texture, composite_overlay, draw_poly_preview, get_rgb_from_texture
 from .pairs import (
     get_biopsy_from_payload,
     get_motion_blur_from_payload,
@@ -70,7 +70,10 @@ class TwoPanelApp(App):
     def build(self):
         self.root = FloatLayout()
         self.layout = BoxLayout(orientation="horizontal")
-        self.ref_view = ReferenceViewer()
+        self.ref_view = ReferenceViewer(
+            on_click_callback=self._on_ref_click,
+            on_cursor_moved_callback=self._on_ref_cursor_moved,
+        )
         self.ann_view = PolygonSegAnnotator(
             allow_editing=self.allow_editing,
             mask_path_getter=self._mask_path_getter,
@@ -209,6 +212,22 @@ class TwoPanelApp(App):
         blit_numpy_to_texture(disp, self.ref_view.texture)
         self.ref_view.draw()
 
+    def _refresh_ref_preview(self):
+        if self.ref_base_rgb is None or self.ref_view.texture is None:
+            return
+
+        disp = self.ref_base_rgb.copy()
+        if self.ann_view.mask is not None:
+            mask = self.ann_view.mask
+            if mask.shape[:2] == disp.shape[:2]:
+                disp = composite_overlay(disp, mask, alpha=0.45)
+
+        if len(self.ann_view.poly_points) > 0:
+            draw_poly_preview(disp, self.ann_view.poly_points, self.ann_view.cursor_xy)
+
+        blit_numpy_to_texture(disp, self.ref_view.texture)
+        self.ref_view.draw()
+
     def load(self):
         ref_path = self.ref_files[self.index]
         tgt_path = self.target_files[self.index]
@@ -272,6 +291,39 @@ class TwoPanelApp(App):
         self.ann_view.revert_mask()
         Clock.schedule_once(lambda *_: self._refresh_ref_clear(), 0)
         self._update_info()
+
+    def _on_ref_cursor_moved(self, position):
+        if self.ann_view.base_rgb is None or self.ann_view.mask is None:
+            return
+        self.ann_view.cursor_xy = (int(position[0]), int(position[1]))
+        if len(self.ann_view.poly_points) > 0:
+            self._refresh_ref_preview()
+
+    def _on_ref_click(self, position, button):
+        if not self.allow_editing or self.ann_view.base_rgb is None or self.ann_view.mask is None:
+            return
+
+        x, y = map(int, position)
+        w, h = self.ref_view.texture.size
+        if not (0 <= x < w and 0 <= y < h):
+            return
+
+        if button == "left":
+            self.ann_view.poly_points.append((x, y))
+            self.ann_view.cursor_xy = (x, y)
+            self._refresh_ref_preview()
+        elif button == "right":
+            self.ann_view.finalize_polygon()
+            self._refresh_ref_overlay()
+            self._update_info()
+        elif button == "middle":
+            self.ann_view.poly_points.clear()
+            self.ann_view.cursor_xy = None
+            if self.ann_view.mask is not None and np.any(self.ann_view.mask > 0):
+                self._refresh_ref_overlay()
+            else:
+                self._refresh_ref_clear()
+            self._update_info()
 
     def jump_to_frame_id(self, *args):
         del args

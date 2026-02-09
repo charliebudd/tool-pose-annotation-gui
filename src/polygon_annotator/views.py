@@ -16,14 +16,18 @@ from .pathing import mask_path_to_vertices_json_path
 
 
 class ReferenceViewer(ImageAnnotator):
-    def __init__(self):
+    def __init__(self, on_click_callback=None, on_cursor_moved_callback=None):
         super().__init__(zoom_min=1.0)
+        self.on_click_callback = on_click_callback
+        self.on_cursor_moved_callback = on_cursor_moved_callback
 
     def on_click(self, position, button):
-        return
+        if self.on_click_callback:
+            self.on_click_callback(position, button)
 
     def on_cursor_moved(self, position):
-        return
+        if self.on_cursor_moved_callback:
+            self.on_cursor_moved_callback(position)
 
     def on_draw(self):
         return
