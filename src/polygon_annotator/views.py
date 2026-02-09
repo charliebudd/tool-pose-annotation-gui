@@ -12,7 +12,7 @@ from .mask_ops import (
     fill_polygon_in_mask,
     texture_to_numpy,
 )
-from .pathing import mask_path_for_target, mask_path_to_vertices_json_path
+from .pathing import mask_path_to_vertices_json_path
 
 
 class ReferenceViewer(ImageAnnotator):
@@ -184,11 +184,9 @@ class PolygonSegAnnotator(ImageAnnotator):
         if self.mask is None or self.current_target_path is None:
             return
 
-        mask_path = mask_path_for_target(
-            target_path=self.current_target_path,
-            images_root="images",
-            masks_root="masks",
-        )
+        mask_path = self.current_mask_path
+        if not mask_path:
+            return
         save_mask(self.mask, mask_path)
         vertices_json_path = mask_path_to_vertices_json_path(mask_path)
         save_vertices_json(self.finalized_polygons, vertices_json_path)

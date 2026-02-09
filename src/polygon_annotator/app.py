@@ -62,8 +62,8 @@ class TwoPanelApp(App):
         del hw
         return mask_path_for_target(
             target_path=target_path,
-            images_root="images",
-            masks_root="masks",
+            images_root=(self.target_root or "images"),
+            masks_root=self.mask_root,
         )
 
     def build(self):
