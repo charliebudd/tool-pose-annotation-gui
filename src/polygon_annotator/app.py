@@ -8,12 +8,14 @@ import numpy as np
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Window
+from kivy.graphics import Color, Line
+from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
-from kivy.uix.checkbox import CheckBox
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
+from kivy.uix.togglebutton import ToggleButton
 
 from .constants import (
     ENTER_KEYCODE,
@@ -58,6 +60,49 @@ class TwoPanelApp(App):
         self.index = 0
         self.ref_base_rgb = None
         self._updating_motion_blur_checkbox = False
+
+    @staticmethod
+    def _new_checkbox(disabled: bool):
+        cb = ToggleButton(
+            text="",
+            size_hint=(None, None),
+            size=(dp(34), dp(34)),
+            background_normal="",
+            background_down="",
+            background_disabled_normal="",
+            background_disabled_down="",
+            background_color=(0.10, 0.10, 0.10, 1),
+            color=(1, 1, 1, 1),
+            bold=True,
+            font_size=dp(22),
+            disabled=disabled,
+        )
+        with cb.canvas.after:
+            cb._border_color = Color(1, 1, 1, 1)
+            cb._border_line = Line(rectangle=(cb.x, cb.y, cb.width, cb.height), width=1.5)
+        cb.bind(pos=TwoPanelApp._update_checkbox_border)
+        cb.bind(size=TwoPanelApp._update_checkbox_border)
+        cb.bind(state=TwoPanelApp._style_checkbox)
+        cb.bind(disabled=TwoPanelApp._style_checkbox)
+        TwoPanelApp._style_checkbox(cb, cb.state)
+        return cb
+
+    @staticmethod
+    def _update_checkbox_border(cb, _value):
+        cb._border_line.rectangle = (cb.x, cb.y, cb.width, cb.height)
+
+    @staticmethod
+    def _style_checkbox(cb, _value):
+        is_active = cb.state == "down"
+        is_disabled = bool(cb.disabled)
+        if is_active:
+            cb.text = "Y"
+            cb.background_color = (0.05, 0.65, 0.25, 1) if not is_disabled else (0.22, 0.35, 0.25, 1)
+            cb._border_color.rgba = (0.95, 0.95, 0.95, 1) if not is_disabled else (0.65, 0.65, 0.65, 1)
+        else:
+            cb.text = ""
+            cb.background_color = (0.10, 0.10, 0.10, 1) if not is_disabled else (0.07, 0.07, 0.07, 1)
+            cb._border_color.rgba = (0.95, 0.95, 0.95, 1) if not is_disabled else (0.45, 0.45, 0.45, 1)
 
     def _mask_path_getter(self, target_path: str, hw: tuple[int, int]):
         del hw
@@ -138,29 +183,25 @@ class TwoPanelApp(App):
             pos_hint={"right": 0.15, "top": 0.10},
             color=(1, 1, 1, 1),
         )
-        self.motion_blur_checkbox = CheckBox(
-            size_hint=(0.04, 0.04),
-            pos_hint={"right": 0.17, "top": 0.10},
-            disabled=(not self.allow_editing) or (not self.pairs_json_path),
+        self.motion_blur_checkbox = self._new_checkbox(
+            disabled=(not self.allow_editing) or (not self.pairs_json_path)
         )
+        self.motion_blur_checkbox.pos_hint = {"right": 0.17, "top": 0.10}
         self.biopsy_label = Label(
             text="Biopsy",
             size_hint=(0.12, 0.04),
             pos_hint={"right": 0.31, "top": 0.10},
             color=(1, 1, 1, 1),
         )
-        self.biopsy_checkbox = CheckBox(
-            size_hint=(0.04, 0.04),
-            pos_hint={"right": 0.33, "top": 0.10},
-            disabled=True,
-        )
+        self.biopsy_checkbox = self._new_checkbox(disabled=True)
+        self.biopsy_checkbox.pos_hint = {"right": 0.33, "top": 0.10}
 
         self.revert_mask_button.bind(on_press=lambda *_: self._on_revert())
         self.undo_vertex_button.bind(on_press=lambda *_: self.ann_view.undo_vertex())
         self.open_kinevo_button.bind(on_press=lambda *_: self.open_kinevo_folder())
         self.jump_button.bind(on_press=lambda *_: self.jump_to_frame_id())
         self.frame_id_input.bind(on_text_validate=lambda *_: self.jump_to_frame_id())
-        self.motion_blur_checkbox.bind(active=self._on_motion_blur_toggled)
+        self.motion_blur_checkbox.bind(state=self._on_motion_blur_toggled)
 
         self.root.add_widget(self.revert_mask_button)
         self.root.add_widget(self.undo_vertex_button)
@@ -263,11 +304,11 @@ class TwoPanelApp(App):
 
         self._updating_motion_blur_checkbox = True
         try:
-            self.motion_blur_checkbox.active = motion_blur
+            self.motion_blur_checkbox.state = "down" if motion_blur else "normal"
         finally:
             self._updating_motion_blur_checkbox = False
 
-        self.biopsy_checkbox.active = bool(biopsy)
+        self.biopsy_checkbox.state = "down" if bool(biopsy) else "normal"
 
     def _on_motion_blur_toggled(self, _checkbox, value):
         if self._updating_motion_blur_checkbox:
@@ -278,9 +319,10 @@ class TwoPanelApp(App):
             print("[Motion Blur] No pairs.json configured. Use --pairs-json to persist metadata.")
             return
 
+        is_active = value == "down"
         try:
-            update_motion_blur_in_json(self.pairs_json_path, self.index, value)
-            print(f"[Motion Blur] Saved pair {self.index}: motion_blur={bool(value)}")
+            update_motion_blur_in_json(self.pairs_json_path, self.index, is_active)
+            print(f"[Motion Blur] Saved pair {self.index}: motion_blur={is_active}")
         except Exception as e:
             print(f"[Motion Blur] Failed to save motion_blur in {self.pairs_json_path}: {e}")
 
