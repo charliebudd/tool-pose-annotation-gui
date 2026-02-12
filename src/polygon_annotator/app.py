@@ -123,6 +123,7 @@ class TwoPanelApp(App):
             allow_editing=self.allow_editing,
             mask_path_getter=self._mask_path_getter,
             overlay_alpha=0.45,
+            mask_cleanup_root=self.mask_root,
         )
         self.layout.add_widget(self.ref_view)
         self.layout.add_widget(self.ann_view)
