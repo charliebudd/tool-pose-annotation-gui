@@ -11,7 +11,6 @@ Config.set("input", "mouse", "mouse,multitouch_on_demand")
 Config.set("graphics", "fullscreen", "1")
 
 from .app import TwoPanelApp
-from .io_utils import ensure_dir
 from .pairs import load_pairs_from_json
 
 
@@ -70,7 +69,6 @@ def main():
         raise SystemExit(f"Missing target files (first 5): {missing_target[:5]}")
 
     mask_root = _resolve_mask_root(args.mask_out)
-    ensure_dir(mask_root)
 
     TwoPanelApp(
         ref_files=ref_files,

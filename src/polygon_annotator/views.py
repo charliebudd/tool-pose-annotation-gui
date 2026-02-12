@@ -187,6 +187,8 @@ class PolygonSegAnnotator(ImageAnnotator):
             return
         if self.mask is None or self.current_target_path is None:
             return
+        if not (self.mask > 0).any():
+            return
 
         mask_path = self.current_mask_path
         if not mask_path:
