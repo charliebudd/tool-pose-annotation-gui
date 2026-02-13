@@ -37,11 +37,18 @@ class ReferenceViewer(ImageAnnotator):
 
 
 class PolygonSegAnnotator(ImageAnnotator):
-    def __init__(self, allow_editing: bool, mask_path_getter, overlay_alpha: float = 0.45):
+    def __init__(
+        self,
+        allow_editing: bool,
+        mask_path_getter,
+        overlay_alpha: float = 0.45,
+        mask_cleanup_root: str | None = None,
+    ):
         super().__init__(zoom_min=1.0)
         self.allow_editing = allow_editing
         self.mask_path_getter = mask_path_getter
         self.overlay_alpha = overlay_alpha
+        self.mask_cleanup_root = os.path.abspath(mask_cleanup_root) if mask_cleanup_root else None
 
         self.current_target_path = None
         self.current_mask_path = None
@@ -53,6 +60,20 @@ class PolygonSegAnnotator(ImageAnnotator):
         self.poly_points = []
         self.cursor_xy = None
         self.finalized_polygons = []
+
+    def _prune_empty_mask_dirs(self, mask_path: str):
+        current = os.path.dirname(os.path.abspath(mask_path))
+        while current and os.path.isdir(current):
+            if self.mask_cleanup_root and os.path.normcase(current) == os.path.normcase(self.mask_cleanup_root):
+                break
+            try:
+                os.rmdir(current)
+            except OSError:
+                break
+            parent = os.path.dirname(current)
+            if parent == current:
+                break
+            current = parent
 
     def on_draw(self):
         return
@@ -126,6 +147,7 @@ class PolygonSegAnnotator(ImageAnnotator):
                     os.remove(vpath)
                 except Exception:
                     pass
+            self._prune_empty_mask_dirs(self.current_mask_path)
 
         self.mask[:] = 0
         self._undo_stack.clear()
@@ -186,6 +208,8 @@ class PolygonSegAnnotator(ImageAnnotator):
         if not self.allow_editing:
             return
         if self.mask is None or self.current_target_path is None:
+            return
+        if not (self.mask > 0).any():
             return
 
         mask_path = self.current_mask_path

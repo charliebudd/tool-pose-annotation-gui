@@ -28,3 +28,14 @@ def test_mask_path_for_target_handles_mixed_separators(tmp_path, monkeypatch):
     mixed = str(target).replace(os.path.sep, "/")
     out = mask_path_for_target(mixed, images_root="images", masks_root="masks")
     assert out == os.path.join("masks", "case001", "tp1", "mask.png")
+
+
+def test_mask_path_for_target_does_not_create_output_directories(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "images" / "case009" / "tp2" / "blue.png"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"x")
+
+    out = mask_path_for_target(str(target), images_root="images", masks_root="masks")
+    assert out == os.path.join("masks", "case009", "tp2", "mask.png")
+    assert not (tmp_path / "masks" / "case009" / "tp2").exists()
