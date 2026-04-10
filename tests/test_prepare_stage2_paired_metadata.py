@@ -1,6 +1,6 @@
 import json
 
-from prepare_stage2_paired_metadata import build_pairs
+from prepare_dataset.prepare_stage2_paired_metadata import build_pairs
 
 
 def test_build_pairs_sets_motion_blur_false_and_keeps_metadata(tmp_path):

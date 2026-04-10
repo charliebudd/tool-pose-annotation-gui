@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Prepare stage2_paired data by copying Kinevo, biopsy, and metadata files."""
+"""Populate a `stage2_paired` dataset tree with supporting case assets.
+
+This script copies three kinds of data into an existing paired-image dataset:
+- `Kinevo` folders from the original NeuroPPEYE export
+- `biopsy*` folders from the `stage2` dataset
+- per-timepoint `MetaData.json` files from the original HSI folders
+
+It maps `NPPEye0xx` source folders onto `case0xx/timepoint0xx` destinations so
+the paired dataset contains the extra context needed by the annotation GUI and
+downstream metadata preparation.
+"""
 
 from __future__ import annotations
 

@@ -1,3 +1,12 @@
+"""Build `pairs.json` for a prepared `stage2_paired` image dataset.
+
+The script scans `case*/timepoint*` folders under `ROOT`, keeps only
+timepoints that contain both `white.png` and `blue.png`, and emits one entry per
+pair. Each output record includes relative image paths, the matching `Kinevo`
+folder when present, a default `motion_blur` flag, and any fields loaded from
+`MetaData.json`.
+"""
+
 import json
 from pathlib import Path
 
