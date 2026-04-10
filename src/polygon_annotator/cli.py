@@ -28,11 +28,11 @@ def _resolve_mask_root(mask_out_arg: str) -> str:
     raw = mask_out_arg.replace("/", os.path.sep)
     normalized = os.path.normpath(raw)
 
+    if os.path.isdir(normalized):
+        return normalized
     if os.path.basename(normalized).lower() == "masks":
         return normalized
-    if raw.endswith(("/", "\\")) or os.path.isdir(normalized):
-        return os.path.join(normalized, "masks")
-    return normalized
+    return os.path.join(normalized, "masks")
 
 
 def main():
