@@ -1,4 +1,0 @@
-numpy
-kivy
-pillow
-pytest

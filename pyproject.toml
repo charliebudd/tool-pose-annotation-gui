@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tool-pose-annotation-gui"
+version = "0.1.0"
+description = "Polygon-style annotation GUI for image pair labeling."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "kivy",
+    "numpy",
+    "pillow",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[tool.setuptools]
+py-modules = []

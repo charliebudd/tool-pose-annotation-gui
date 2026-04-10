@@ -8,12 +8,15 @@ Clone this repo and install the dependencies:
 ```bash
 git clone https://github.com/cai4cai/tool-pose-annotation-gui.git
 cd tool-pose-annotation-gui
-pip install -r requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install --upgrade pip
+python3 -m pip install -e .[dev]
 ```
 
 Run the app:
 ```bash
-python annotate_polygon.py --pairs-json ./images/pairs.json
+python3 annotate_polygon.py --pairs-json ./images/pairs.json
 ```
 
 ## Arguments
@@ -24,7 +27,7 @@ Only two CLI arguments are supported:
 
 Example:
 ```bash
-python annotate_polygon.py --pairs-json G:\NeuroPPEYE\stage2_paired\pairs.json --mask-out G:\NeuroPPEYE\stage2_paired\
+python3 annotate_polygon.py --pairs-json G:\NeuroPPEYE\stage2_paired\pairs.json --mask-out G:\NeuroPPEYE\stage2_paired\
 ```
 
 `--pairs-json` root handling:
