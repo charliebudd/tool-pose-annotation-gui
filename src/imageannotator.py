@@ -46,11 +46,15 @@ class ImageAnnotator(Widget):
     @abstractmethod
     def on_draw(self):
         pass
+    
+    def new_image(self):
+        pass
    
     def set_image(self, image_file):
         self.texture = Image(source=image_file).texture
         # self.zoom = 1.0
         self.update_transforms()
+        self.new_image()
 
     def draw(self):
         x, y, w, h  = self.rect

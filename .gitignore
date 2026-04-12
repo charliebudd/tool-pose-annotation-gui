@@ -127,3 +127,10 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+/.idea/
+
+# VS Code settings
+.vscode/
+.history/
+images/
+masks/
